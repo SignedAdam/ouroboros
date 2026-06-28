@@ -41,7 +41,32 @@ public struct Agent: Sendable {
     }
 }
 
-// Filled in Task 5.
 public func seedPrompt(issue: Issue, baseBranch: String, options: FixOptions, branch: String?) -> String {
-    ""
+    let fileLine = issue.path.map { "(Issue file: \($0))\n\n" } ?? ""
+    let header =
+        "A user filed this issue from an in-app composer. It may be ill-defined — " +
+        "decide first whether it is clear enough to implement.\n\n" +
+        "## \(issue.title)\n\n\(issue.body)\n\n" + fileLine +
+        "If it is NOT clearly actionable, do not guess: note what's ambiguous in the " +
+        "issue file and stop — leave it blocked. "
+    let br = branch ?? "fix/\(issue.slug)"
+    let action: String
+    switch (options.worktree, options.finish) {
+    case (true, .mergeIntoBase):
+        action = "If it IS clear, you are in a dedicated git worktree on branch `\(br)`. " +
+            "Implement it fully, verify it, rebase on `\(baseBranch)`, then merge back into `\(baseBranch)`. " +
+            "If there are conflicts you cannot cleanly resolve, stop and leave the branch with a note. " +
+            "When merged cleanly, remove this worktree, then summarize what you changed."
+    case (true, .openPR):
+        action = "If it IS clear, you are in a dedicated git worktree on branch `\(br)`. " +
+            "Implement it fully, verify it, push the branch, and open a PR into `\(baseBranch)` with `gh pr create`. " +
+            "Do not merge. Then summarize what you changed."
+    case (false, .mergeIntoBase):
+        action = "If it IS clear, implement it fully on the current branch, verify it, then commit. " +
+            "Then summarize what you changed."
+    case (false, .openPR):
+        action = "If it IS clear, create a new branch `\(br)`, implement it fully, verify it, push, and " +
+            "open a PR into `\(baseBranch)` with `gh pr create`. Then summarize what you changed."
+    }
+    return header + action
 }
