@@ -24,4 +24,19 @@ final class IssueTrackingTests: XCTestCase {
         XCTAssertEqual(dated.created, Date(timeIntervalSince1970: 100))
         XCTAssertEqual(dated.status, .done)
     }
+
+    // MARK: - statusDir layout rule
+
+    func testStatusDirReplacesStatusSuffix() {
+        let store = IssueStore(rootDir: "/repo")
+        XCTAssertEqual(store.statusDir(.new), "/repo/.issues/new")
+        XCTAssertEqual(store.statusDir(.done), "/repo/.issues/done")
+        XCTAssertEqual(store.statusDir(.cancelled), "/repo/.issues/cancelled")
+    }
+
+    func testStatusDirAppendsWhenSubdirHasNoStatusSuffix() {
+        let store = IssueStore(rootDir: "/repo", subdir: "tickets")
+        XCTAssertEqual(store.statusDir(.new), "/repo/tickets/new")
+        XCTAssertEqual(store.statusDir(.planned), "/repo/tickets/planned")
+    }
 }

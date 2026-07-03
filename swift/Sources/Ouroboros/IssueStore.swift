@@ -3,18 +3,44 @@ import Foundation
 public struct IssueStore: Sendable {
     public let rootDir: String
     public let subdir: String
+    let now: @Sendable () -> Date
 
-    public init(rootDir: String, subdir: String = ".issues/new") {
+    public init(rootDir: String, subdir: String = ".issues/new",
+                now: @escaping @Sendable () -> Date = { Date() }) {
         self.rootDir = rootDir
         self.subdir = subdir
+        self.now = now
     }
 
-    private func dir() -> String {
+    /// Directory for a status: if `subdir`'s last component is a status raw value it is
+    /// replaced by `s.rawValue`; otherwise `s.rawValue` is appended.
+    func statusDir(_ s: IssueStatus) -> String {
+        var parts = subdir.split(separator: "/").map(String.init)
+        if let last = parts.last, IssueStatus(rawValue: last) != nil {
+            parts[parts.count - 1] = s.rawValue
+        } else {
+            parts.append(s.rawValue)
+        }
         var path = rootDir
-        for part in subdir.split(separator: "/") {
-            path = (path as NSString).appendingPathComponent(String(part))
+        for part in parts {
+            path = (path as NSString).appendingPathComponent(part)
         }
         return path
+    }
+
+    private func dir() -> String { statusDir(.new) }
+
+    static func isoString(_ date: Date) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f.string(from: date)
+    }
+
+    static func isoDate(_ string: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f.date(from: string)
     }
 
     private func filename(_ title: String) -> String {
@@ -45,12 +71,18 @@ public struct IssueStore: Sendable {
         guard !t.isEmpty, !b.isEmpty, let path = nextPath(t) else { return nil }
         let parent = (path as NSString).deletingLastPathComponent
         try? FileManager.default.createDirectory(atPath: parent, withIntermediateDirectories: true)
-        let content = "## \(t)\n\n\(b)\n"
+        let created = now()
+        let content = Self.render(title: t, created: created, body: b)
         do {
             try content.write(toFile: path, atomically: true, encoding: .utf8)
         } catch {
             return nil
         }
-        return Issue(title: t, slug: IssueText.slugify(t), body: b, path: path)
+        return Issue(title: t, slug: IssueText.slugify(t), body: b, path: path,
+                     created: created, status: .new)
+    }
+
+    static func render(title: String, created: Date, body: String) -> String {
+        "---\ntitle: \(title)\ncreated: \(isoString(created))\n---\n\n## \(title)\n\n\(body)\n"
     }
 }

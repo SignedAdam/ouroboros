@@ -11,15 +11,28 @@ final class IssueStoreTests: XCTestCase {
 
     func testWriteCreatesFileWithExpectedContent() throws {
         let root = tempDir()
-        let store = IssueStore(rootDir: root)
+        let pinned = ISO8601DateFormatter().date(from: "2026-07-03T02:55:12Z")!
+        let store = IssueStore(rootDir: root, now: { pinned })
         let issue = store.write(title: "Fix login", body: "  the button does nothing  ")
         XCTAssertNotNil(issue)
         let expectedPath = (root as NSString)
             .appendingPathComponent(".issues/new/Fix login.md")
         XCTAssertEqual(issue?.path, expectedPath)
         let content = try String(contentsOfFile: expectedPath, encoding: .utf8)
-        XCTAssertEqual(content, "## Fix login\n\nthe button does nothing\n")
+        XCTAssertEqual(content, """
+        ---
+        title: Fix login
+        created: 2026-07-03T02:55:12Z
+        ---
+
+        ## Fix login
+
+        the button does nothing
+
+        """)
         XCTAssertEqual(issue?.slug, "fix-login")
+        XCTAssertEqual(issue?.created, pinned)
+        XCTAssertEqual(issue?.status, .new)
     }
 
     func testWriteDedupsOnCollision() {
