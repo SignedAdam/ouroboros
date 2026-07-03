@@ -10,9 +10,15 @@ into your app.
 
 ## How to use this repo (for a coding agent)
 
-1. Open the folder for your app's language (below).
-2. Read that folder's `INTEGRATION.md` and copy the implementation into the target app.
-3. Wire the entry point (a "Report Issue" button / menu item) and settings per that guide.
+**Read and follow [`skills/ouroboros-integrate/SKILL.md`](skills/ouroboros-integrate/SKILL.md).**
+It is the single entry point: it detects your app's language, tells you whether to install
+an existing package (Swift) or port the pattern, and walks the full wiring — composer,
+floating button, menu section, issues browser, settings — through to a verification
+checklist. (If your agent runtime supports installable skills, copy that folder into your
+project's `.claude/skills/`; reading the file directly works just as well.)
+
+The per-language folders below hold the implementations the skill installs or references;
+`swift/INTEGRATION.md` has extra Swift-specific detail.
 
 ## Languages
 
@@ -29,7 +35,10 @@ into your app.
 Five small units, mirrored in every language:
 
 1. **Issue** — model + a local title heuristic (first line → ~9 words) + slug.
-2. **Store** — write the issue as `.issues/new/<Title>.md` (`## Title` + body), dedup.
+2. **Store** — issues as markdown files under `.issues/<status>/` (status ∈ new/planned/
+   done/cancelled = the folder), with frontmatter metadata (`title`, `created`), listing,
+   body editing, status moves, and dedup. Fixing agents auto-resolve: they append a
+   `## Resolution` section and move the file to `done/`.
 3. **Agent** — build the agent command + a **seed prompt** telling it: this is one issue
    from an in-app composer; decide if it's actionable, then (in a worktree) implement →
    verify → merge back or open a PR; else leave it blocked with a note.
