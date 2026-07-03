@@ -39,4 +39,67 @@ final class IssueTrackingTests: XCTestCase {
         XCTAssertEqual(store.statusDir(.new), "/repo/tickets/new")
         XCTAssertEqual(store.statusDir(.planned), "/repo/tickets/planned")
     }
+
+    // MARK: - read (frontmatter roundtrip + legacy tolerance)
+
+    func testReadRoundtripsFrontmatter() {
+        let root = tempDir()
+        let pinned = ISO8601DateFormatter().date(from: "2026-07-03T02:55:12Z")!
+        let store = IssueStore(rootDir: root, now: { pinned })
+        let written = store.write(title: "Fix login", body: "the button does nothing")!
+        let issue = store.read(path: written.path!)
+        XCTAssertEqual(issue?.title, "Fix login")
+        XCTAssertEqual(issue?.slug, "fix-login")
+        XCTAssertEqual(issue?.body, "the button does nothing")
+        XCTAssertEqual(issue?.created, pinned)
+        XCTAssertEqual(issue?.status, .new)
+        XCTAssertEqual(issue?.path, written.path)
+    }
+
+    func testReadInfersStatusFromParentFolder() throws {
+        let root = tempDir()
+        let store = IssueStore(rootDir: root)
+        let doneDir = (root as NSString).appendingPathComponent(".issues/done")
+        try FileManager.default.createDirectory(atPath: doneDir, withIntermediateDirectories: true)
+        let path = (doneDir as NSString).appendingPathComponent("Shipped.md")
+        try "---\ntitle: Shipped\ncreated: 2026-01-01T00:00:00Z\n---\n\n## Shipped\n\ndone body\n"
+            .write(toFile: path, atomically: true, encoding: .utf8)
+        let issue = store.read(path: path)
+        XCTAssertEqual(issue?.status, .done)
+        XCTAssertEqual(issue?.title, "Shipped")
+        XCTAssertEqual(issue?.body, "done body")
+        XCTAssertEqual(issue?.created, ISO8601DateFormatter().date(from: "2026-01-01T00:00:00Z"))
+    }
+
+    func testReadLegacyFileDerivesTitleBodyAndMtime() throws {
+        let root = tempDir()
+        let store = IssueStore(rootDir: root)
+        let newDir = (root as NSString).appendingPathComponent(".issues/new")
+        try FileManager.default.createDirectory(atPath: newDir, withIntermediateDirectories: true)
+        let path = (newDir as NSString).appendingPathComponent("Old issue.md")
+        try "## Old issue\n\nlegacy body\nsecond line\n".write(toFile: path, atomically: true, encoding: .utf8)
+        let mtime = try FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date
+        let issue = store.read(path: path)
+        XCTAssertEqual(issue?.title, "Old issue")
+        XCTAssertEqual(issue?.body, "legacy body\nsecond line")
+        XCTAssertEqual(issue?.created, mtime)
+        XCTAssertEqual(issue?.status, .new)
+    }
+
+    func testReadLegacyFileWithoutHeadingFallsBackToFilename() throws {
+        let root = tempDir()
+        let store = IssueStore(rootDir: root)
+        let newDir = (root as NSString).appendingPathComponent(".issues/new")
+        try FileManager.default.createDirectory(atPath: newDir, withIntermediateDirectories: true)
+        let path = (newDir as NSString).appendingPathComponent("Random notes.md")
+        try "just some markdown\nno heading here\n".write(toFile: path, atomically: true, encoding: .utf8)
+        let issue = store.read(path: path)
+        XCTAssertEqual(issue?.title, "Random notes")
+        XCTAssertEqual(issue?.body, "just some markdown\nno heading here")
+    }
+
+    func testReadMissingFileReturnsNil() {
+        let store = IssueStore(rootDir: tempDir())
+        XCTAssertNil(store.read(path: "/nonexistent/nope.md"))
+    }
 }

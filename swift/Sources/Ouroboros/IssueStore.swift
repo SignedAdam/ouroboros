@@ -85,4 +85,69 @@ public struct IssueStore: Sendable {
     static func render(title: String, created: Date, body: String) -> String {
         "---\ntitle: \(title)\ncreated: \(isoString(created))\n---\n\n## \(title)\n\n\(body)\n"
     }
+
+    struct ParsedDoc {
+        let title: String?
+        let created: Date?
+        let hadFrontmatter: Bool
+        let body: String
+    }
+
+    /// Line-based parse of an issue document. Tolerates files with no frontmatter
+    /// (legacy v1 `## Title\n\nbody`, or arbitrary markdown).
+    static func parse(content: String) -> ParsedDoc {
+        let lines = content.components(separatedBy: "\n")
+        var fmTitle: String?
+        var fmCreated: Date?
+        var hadFrontmatter = false
+        var bodySearchStart = 0
+        if lines.first?.trimmingCharacters(in: .whitespaces) == "---" {
+            var close: Int?
+            for i in 1..<lines.count where lines[i].trimmingCharacters(in: .whitespaces) == "---" {
+                close = i
+                break
+            }
+            if let close {
+                hadFrontmatter = true
+                for line in lines[1..<close] {
+                    guard let colon = line.firstIndex(of: ":") else { continue }
+                    let key = line[..<colon].trimmingCharacters(in: .whitespaces).lowercased()
+                    let value = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+                    if key == "title", !value.isEmpty { fmTitle = value }
+                    if key == "created" { fmCreated = isoDate(value) }
+                }
+                bodySearchStart = close + 1
+            }
+        }
+        var headingLine: Int?
+        var headingTitle: String?
+        for i in bodySearchStart..<lines.count where lines[i].hasPrefix("## ") {
+            headingLine = i
+            headingTitle = String(lines[i].dropFirst(3)).trimmingCharacters(in: .whitespaces)
+            break
+        }
+        let bodyLines = headingLine.map { Array(lines[($0 + 1)...]) } ?? Array(lines[bodySearchStart...])
+        let body = bodyLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = fmTitle ?? (headingTitle?.isEmpty == false ? headingTitle : nil)
+        return ParsedDoc(title: title, created: fmCreated, hadFrontmatter: hadFrontmatter, body: body)
+    }
+
+    /// Parse one issue file. Status is inferred from the parent folder name (fallback `.new`).
+    /// Legacy files (no frontmatter) derive title from the first `## ` heading (else the
+    /// filename) and `created` from the file's modification date.
+    public func read(path: String) -> Issue? {
+        guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        let parentName = (((path as NSString).deletingLastPathComponent) as NSString).lastPathComponent
+        let status = IssueStatus(rawValue: parentName) ?? .new
+        let parsed = Self.parse(content: content)
+        let title = parsed.title ?? ((path as NSString).lastPathComponent as NSString).deletingPathExtension
+        let created: Date?
+        if parsed.hadFrontmatter {
+            created = parsed.created
+        } else {
+            created = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date
+        }
+        return Issue(title: title, slug: IssueText.slugify(title), body: parsed.body, path: path,
+                     created: created, status: status)
+    }
 }
