@@ -4,29 +4,35 @@ You are adding the Ouroboros "report an issue → fix it with an agent" flow to 
 Swift app. Follow these steps. Adapt names to the host app's conventions; keep the engine
 calls identical.
 
-## 1. Add the dependency
+## 1. Copy the package into your app
 
-In the app's `Package.swift` (or Xcode project's package dependencies):
+This Swift version lives in the multi-language `ouroboros` repo under `swift/`. SPM can't
+depend on a subfolder of a repo by URL, and the whole point is that your app **owns a copy**
+of the pattern — so copy `swift/` into your app as a local package:
+
+```sh
+# from your app's repo root, with the ouroboros repo checked out somewhere:
+cp -R /path/to/ouroboros/swift Packages/Ouroboros
+```
+
+Then add it as a path dependency. **SPM gotcha:** a path dependency's identity is its
+**directory name**, so a folder named `Ouroboros` gives `package: "Ouroboros"`:
 
 ```swift
 dependencies: [
-    // Published:
-    .package(url: "https://github.com/<owner>/ouroboros-swift", branch: "main"),
-    // …or local during development:
-    // .package(path: "../ouroboros-swift"),
+    .package(path: "Packages/Ouroboros"),
 ],
+targets: [
+    .target(
+        name: "YourApp",
+        dependencies: [.product(name: "Ouroboros", package: "Ouroboros")]
+    ),
+]
 ```
 
-**SPM gotcha:** a path/url dependency is identified by its **repository/directory name**,
-not the manifest's `name:`. The repo is `ouroboros-swift`, so the product reference is
-`package: "ouroboros-swift"`:
-
-```swift
-.target(
-    name: "YourApp",
-    dependencies: [.product(name: "Ouroboros", package: "ouroboros-swift")]
-),
-```
+(You could instead add the whole `ouroboros` repo as a git submodule and path-dep
+`<submodule>/swift`, but then the SPM identity is `swift` — copying in as
+`Packages/Ouroboros` reads better and keeps your app self-contained.)
 
 **If a test target imports `Ouroboros`**, add the same product to that target's
 dependencies too — SPM only lets you `import` a module that is a direct dependency.

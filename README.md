@@ -1,82 +1,44 @@
 # Ouroboros
 
-In-app issue capture → coding agent. A user describes an issue in your app, you save it
-as a markdown file, and (optionally) hand it straight to a coding agent (Claude Code,
-Codex, …) running in an isolated git worktree in a new terminal tab. It feels magical:
-file ten issues, fire ten agents, walk away.
+**One pattern, every language.** An in-app "report an issue → hand it straight to a coding
+agent in an isolated git worktree in a new terminal tab" flow. File ten issues, fire ten
+agents, walk away. It feels magical.
 
-This is the Swift port of the engine that powers the issue-fixer in Vaux. It is a pure,
-UI-free package — drop it into any macOS Swift app and build whatever UI you like on top
-(or use the included default `OuroborosUI`).
+This repo holds a self-contained implementation of that pattern **per language**. Point a
+coding agent at this repo, tell it your app's language, and it copies that version's pattern
+into your app.
 
-## The engine (pure, no UI deps)
+## How to use this repo (for a coding agent)
 
-Five small units, all `Sendable`, all shell-outs behind injectable runners (so they test
-headlessly and spawn nothing):
+1. Open the folder for your app's language (below).
+2. Read that folder's `INTEGRATION.md` and copy the implementation into the target app.
+3. Wire the entry point (a "Report Issue" button / menu item) and settings per that guide.
 
-| Type | Responsibility |
-|---|---|
-| `Issue` / `IssueText` | the issue model + `suggestTitle` (local heuristic: first line → 9 words/60 chars), `slugify`, `cleanTitle` |
-| `IssueStore` | writes `.issues/new/<Title>.md` as `## Title\n\nbody`, dedups collisions |
-| `Agent` / `seedPrompt` | builds the agent argv + the seed prompt (worktree-or-in-place × merge-or-PR); presets `.claudeCode`, `.codex`, `.gemini`, `.pi`, `.custom(…)` |
-| `WorktreeManager` | `git worktree add` on a `fix/<slug>` branch off your base, with dedup |
-| `TerminalLauncher` | pluggable spawn: `.ghosttyTmuxTab` (new tab in your active tmux session inside Ghostty), `.osDefault` (Terminal.app), `.custom` |
-| `Ouroboros` (facade) | `submit(title:body:)` → `handToAgent(_:options:)` |
+## Languages
 
-## Quick start
+| Folder | Status | Notes |
+|---|---|---|
+| [`swift/`](swift/) | ✅ Ready | Swift / SwiftUI, macOS. Pure engine (`Ouroboros`) + optional default UI (`OuroborosUI`). 26 unit tests. In production use in Monday. |
+| [`python/`](python/) | ⏳ Planned | A reference implementation exists today in Vaux (`vaux/ouroboros/`); port it here. |
+| [`go/`](go/) | ⏳ Planned | |
+| [`nextjs/`](nextjs/) | ⏳ Planned | |
+| [`react/`](react/) | ⏳ Planned | |
 
-```swift
-import Ouroboros
+## The pattern (language-agnostic)
 
-let ouroboros = Ouroboros(
-    projectDir: "/path/to/your/repo",          // where .issues/ lives and the agent runs
-    agent: .claudeCode,                         // or .codex
-    terminal: TerminalLauncher(kind: .ghosttyTmuxTab),
-    baseBranch: "main"                          // fixes merge back / PR into this
-)
+Five small units, mirrored in every language:
 
-// 1) Save the issue.
-guard let issue = ouroboros.submit(title: "Fix the login button", body: "It does nothing") else { return }
+1. **Issue** — model + a local title heuristic (first line → ~9 words) + slug.
+2. **Store** — write the issue as `.issues/new/<Title>.md` (`## Title` + body), dedup.
+3. **Agent** — build the agent command + a **seed prompt** telling it: this is one issue
+   from an in-app composer; decide if it's actionable, then (in a worktree) implement →
+   verify → merge back or open a PR; else leave it blocked with a note.
+4. **Terminal launcher** — spawn the agent in a new terminal tab (default: a `tmux`
+   window in the active session, i.e. a new Ghostty tab). Pluggable per environment.
+5. **Facade** — `submit(title, body)` → `handToAgent(issue, options)`.
 
-// 2) Optionally hand it to the agent. Per-issue options:
-ouroboros.handToAgent(issue, options: FixOptions(worktree: true, finish: .mergeIntoBase))
-```
+Per-issue options the UI exposes each time: **run in a new worktree?** and **merge into
+base vs. open a PR**.
 
-`FixOptions`:
-- `worktree: Bool` — run the fix in a fresh isolated worktree (default `true`). Off → work in place on the current branch.
-- `finish: .mergeIntoBase | .openPR` — when the agent is done, merge back into `baseBranch`, or open a PR with `gh`.
-
-## Live title suggestion
-
-As the user types the description, suggest a title and let them override it:
-
-```swift
-// onChange(of: description):
-if !titleEdited { title = IssueText.suggestTitle(description) }
-```
-
-## Optional default UI
-
-`OuroborosUI` ships a `MenuBarExtra`-based entry point and a basic SwiftUI composer so a
-brand-new app gets the whole flow for free:
-
-```swift
-import OuroborosUI
-
-// in your App's body:
-OuroborosMenuBarEntry(ouroboros: ouroboros)
-```
-
-Apps with their own design system should build their own composer against the engine
-instead (see `INTEGRATION.md`).
-
-## Requirements
-
-- macOS 14+, Swift 6.
-- On PATH (resolved via a login shell, so a Finder-launched app finds homebrew): the
-  agent CLI you use (`claude` / `codex`), plus `tmux` and Ghostty for `.ghosttyTmuxTab`,
-  and `gh` if you use `finish: .openPR`.
-
-## Integrating into your app
-
-See [`INTEGRATION.md`](INTEGRATION.md) — written for a coding agent to follow.
+Keep the units small, pure, and behind injectable runners so they test without spawning
+anything — each language folder does exactly that.
