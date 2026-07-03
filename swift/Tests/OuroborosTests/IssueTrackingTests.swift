@@ -135,4 +135,48 @@ final class IssueTrackingTests: XCTestCase {
     func testListEmptyRootReturnsEmpty() {
         XCTAssertEqual(IssueStore(rootDir: tempDir()).list().count, 0)
     }
+
+    // MARK: - setStatus
+
+    func testSetStatusMovesFileToStatusFolder() {
+        let root = tempDir()
+        let store = IssueStore(rootDir: root)
+        let issue = store.write(title: "Move me", body: "b")!
+        let moved = store.setStatus(issue, .done)
+        XCTAssertNotNil(moved)
+        XCTAssertEqual(moved?.status, .done)
+        XCTAssertEqual(moved?.path, (root as NSString).appendingPathComponent(".issues/done/Move me.md"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: issue.path!))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: moved!.path!))
+        XCTAssertEqual(moved?.title, issue.title)
+        XCTAssertEqual(moved?.created, issue.created)
+    }
+
+    func testSetStatusDedupsNameCollision() throws {
+        let root = tempDir()
+        let store = IssueStore(rootDir: root)
+        _ = try put(root, "done", "Same.md", "## Same\n\nalready here\n")
+        let issue = store.write(title: "Same", body: "incoming")!
+        let moved = store.setStatus(issue, .done)
+        XCTAssertEqual(moved?.path, (root as NSString).appendingPathComponent(".issues/done/Same 2.md"))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: moved!.path!))
+    }
+
+    func testSetStatusSameFolderIsNoOpMove() {
+        let root = tempDir()
+        let store = IssueStore(rootDir: root)
+        let issue = store.write(title: "Stay", body: "b")!
+        let same = store.setStatus(issue, .new)
+        XCTAssertEqual(same?.path, issue.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: issue.path!))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: (root as NSString).appendingPathComponent(".issues/new/Stay 2.md")))
+    }
+
+    func testSetStatusNilOnMissingPath() {
+        let store = IssueStore(rootDir: tempDir())
+        XCTAssertNil(store.setStatus(Issue(title: "X", slug: "x", body: "b"), .done))
+        XCTAssertNil(store.setStatus(Issue(title: "X", slug: "x", body: "b",
+                                           path: "/nonexistent/X.md"), .done))
+    }
 }

@@ -52,7 +52,11 @@ public struct IssueStore: Sendable {
     private func nextPath(_ title: String) -> String? {
         let fn = filename(title)
         if fn.isEmpty { return nil }
-        let d = dir()
+        return Self.availablePath(in: dir(), filename: fn)
+    }
+
+    /// First non-existing path for `filename` in `d`, deduping with " 2"/" 3"/… suffixes.
+    static func availablePath(in d: String, filename fn: String) -> String? {
         let first = (d as NSString).appendingPathComponent(fn)
         if !FileManager.default.fileExists(atPath: first) { return first }
         let base = (fn as NSString).deletingPathExtension
@@ -172,5 +176,30 @@ public struct IssueStore: Sendable {
             case (nil, nil):   return (a.path ?? "") < (b.path ?? "")
             }
         }
+    }
+
+    /// Move the issue file to the folder for `status` (created if needed), deduping name
+    /// collisions. Returns the issue with updated path + status; nil on missing path or
+    /// a failed move.
+    @discardableResult
+    public func setStatus(_ issue: Issue, _ status: IssueStatus) -> Issue? {
+        let fm = FileManager.default
+        guard let path = issue.path, fm.fileExists(atPath: path) else { return nil }
+        let destDir = statusDir(status)
+        try? fm.createDirectory(atPath: destDir, withIntermediateDirectories: true)
+        let fn = (path as NSString).lastPathComponent
+        let straight = (destDir as NSString).appendingPathComponent(fn)
+        if straight == path {   // already in that folder — nothing to move
+            return Issue(title: issue.title, slug: issue.slug, body: issue.body, path: path,
+                         created: issue.created, status: status)
+        }
+        guard let dest = Self.availablePath(in: destDir, filename: fn) else { return nil }
+        do {
+            try fm.moveItem(atPath: path, toPath: dest)
+        } catch {
+            return nil
+        }
+        return Issue(title: issue.title, slug: issue.slug, body: issue.body, path: dest,
+                     created: issue.created, status: status)
     }
 }
