@@ -1,15 +1,22 @@
 import Foundation
 
+public enum IssueStatus: String, CaseIterable, Sendable { case new, planned, done, cancelled }
+
 public struct Issue: Sendable, Equatable {
     public let title: String
     public let slug: String
     public let body: String
     public let path: String?
-    public init(title: String, slug: String, body: String, path: String? = nil) {
+    public let created: Date?
+    public let status: IssueStatus
+    public init(title: String, slug: String, body: String, path: String? = nil,
+                created: Date? = nil, status: IssueStatus = .new) {
         self.title = title
         self.slug = slug
         self.body = body
         self.path = path
+        self.created = created
+        self.status = status
     }
 }
 
