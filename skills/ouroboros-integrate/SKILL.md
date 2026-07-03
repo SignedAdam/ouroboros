@@ -53,7 +53,13 @@ Exactly ONE harness is ever passed to a fix invocation.
    `.issues`, `handToAgent`). If one exists: EXTEND it to the end state above — do not
    duplicate engines, settings keys, or entry points. Reuse its settings and composer;
    add what's missing (typically the floating button, menu section, issues browser).
+   If the existing integration depends on an **external checkout** of the engine (a
+   sibling-directory path-dep or symlink), **migrate it to the vendored copy** in Phase 1
+   — the end state is always the app owning its copy.
 3. Find the repo root the app should file issues into (usually the app's own repo).
+   **Default rule for the repo-path setting:** hardcode the app repo's absolute dev-
+   checkout path as the default (a bundled GUI app has no repo of its own at runtime, so
+   "detect it" is not derivable) and make it editable in Settings.
 
 ## Phase 1 — Get the engine
 
@@ -73,7 +79,14 @@ dependencies: [ .package(path: "Packages/Ouroboros") ],
 ```
 (A path-dep to a checkout of `$OURO/swift` also works during development; its identity is
 then `swift` — prefer the copy.) Verify: `swift test` inside the copied package — all
-green before you write a line of app code.
+green before you write a line of app code. Then confirm the host repo's `.gitignore`
+covers `Packages/Ouroboros/.build/` (running the tests just recreated it); add a rule if
+not, and commit the vendored copy.
+
+The package also ships an **`OuroborosUI`** target (a plain default composer +
+`MenuBarExtra` entry). Use it ONLY when the host app has no design system of its own;
+an app with established components ignores `OuroborosUI` entirely and builds its own
+surfaces against the engine (per Phase 3's styling rule). Don't link it "just in case."
 
 ### Python — port exists in spirit
 
@@ -144,9 +157,15 @@ form-field components and use them — never introduce foreign styling).
    persists other settings.
 2. **Composer** (two-phase): live title suggestion =
    `on description change: if !titleEdited { title = IssueText.suggestTitle(description) }`,
-   with `titleEdited` set once the user types in the title field. Create =
-   `submit(title.isEmpty ? suggestTitle(body) : title, body)`; require a non-empty body.
-   Confirm phase per the harness rule; each fix button calls
+   with `titleEdited` set once the user types in the title field.
+   **⚠ Echo trap:** in reactive frameworks (SwiftUI `onChange`, React controlled inputs),
+   the *programmatic* suggestion write fires the title field's own change handler — if
+   that handler naively sets `titleEdited = true`, live suggestions die after the first
+   keystroke. Only mark the title dirty when the new value **differs from the suggestion
+   you last wrote** (track `lastSuggested`; `titleEdited = (newTitle != lastSuggested)`),
+   and cover this with the regression test named in Phase 4.
+   Create = `submit(title.isEmpty ? suggestTitle(body) : title, body)`; require a
+   non-empty body. Confirm phase per the harness rule; each fix button calls
    `handToAgent(issue, options)` with that ONE harness's agent, then closes.
 3. **Floating button**: small, corner-anchored, above all routes/screens, opens the
    composer. Keep it unobtrusive (icon-only, ~32px, host-app accent color).
@@ -155,14 +174,22 @@ form-field components and use them — never introduce foreign styling).
    elsewhere, MOVE it into this menu.
 5. **Issues browser**: `store.list()` table (title / status / created); detail = markdown
    `body` in a text editor → Save = `updateBody`; actions = fix buttons (harness rule) +
-   *Mark done* (`setStatus(.done)`) + *Cancel* (`setStatus(.cancelled)`). Refresh the
-   list after every action.
+   *Mark done* (`setStatus(.done)`) + *Cancel issue* (`setStatus(.cancelled)`). Label it
+   **"Cancel issue"** — a bare "Cancel" in a modal reads as "close this dialog". Fix
+   buttons here use the engine's default options (`FixOptions()` = worktree ON, merge
+   into base); only the composer offers per-issue option toggles. Refresh the list after
+   every action, and note `setStatus`/`updateBody` return an issue with a **new path** —
+   re-key any selection state to the returned issue or the detail pane silently
+   deselects.
 
 ## Phase 4 — Verify (all of it)
 
 1. Engine tests green (package's own suite, or your port's).
 2. App builds; app test suite passes (add tests for: harness rule 0/1/2, title
-   suggestion + dirty flag, settings persistence — mirror the app's testing idiom).
+   suggestion + dirty flag **including the echo regression** — programmatically applied
+   suggestions must NOT stop future suggestions —, settings persistence — mirror the
+   app's testing idiom; if settings use a shared store like `UserDefaults.standard`,
+   save/restore the keys around the test so state doesn't leak across runs).
 3. Manual checklist — run the app:
    - floating button visible on every screen; opens the composer
    - menu bar shows **Ouroboros → Report Issue… (⌘⇧I), Issues… (⌘⇧O)**
