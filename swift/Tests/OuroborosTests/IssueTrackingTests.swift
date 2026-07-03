@@ -179,4 +179,66 @@ final class IssueTrackingTests: XCTestCase {
         XCTAssertNil(store.setStatus(Issue(title: "X", slug: "x", body: "b",
                                            path: "/nonexistent/X.md"), .done))
     }
+
+    // MARK: - updateBody
+
+    func testUpdateBodyPreservesTitleAndCreated() throws {
+        let root = tempDir()
+        let pinned = ISO8601DateFormatter().date(from: "2026-07-03T02:55:12Z")!
+        let store = IssueStore(rootDir: root, now: { pinned })
+        let issue = store.write(title: "Keep meta", body: "old body")!
+        let updated = store.updateBody(issue, body: "  new body\nwith detail  ")
+        XCTAssertEqual(updated?.body, "new body\nwith detail")
+        XCTAssertEqual(updated?.title, "Keep meta")
+        XCTAssertEqual(updated?.created, pinned)
+        XCTAssertEqual(updated?.path, issue.path)
+        let content = try String(contentsOfFile: issue.path!, encoding: .utf8)
+        XCTAssertEqual(content, """
+        ---
+        title: Keep meta
+        created: 2026-07-03T02:55:12Z
+        ---
+
+        ## Keep meta
+
+        new body
+        with detail
+
+        """)
+    }
+
+    func testUpdateBodyRejectsEmptyAndMissingPath() throws {
+        let root = tempDir()
+        let store = IssueStore(rootDir: root)
+        let issue = store.write(title: "Solid", body: "original")!
+        XCTAssertNil(store.updateBody(issue, body: "   \n  "))
+        let content = try String(contentsOfFile: issue.path!, encoding: .utf8)
+        XCTAssertTrue(content.contains("original"))                     // untouched
+        XCTAssertNil(store.updateBody(Issue(title: "X", slug: "x", body: "b"), body: "new"))
+        XCTAssertNil(store.updateBody(Issue(title: "X", slug: "x", body: "b",
+                                            path: "/nonexistent/X.md"), body: "new"))
+    }
+
+    func testUpdateBodyOnLegacyFileWritesDerivedFrontmatter() throws {
+        let root = tempDir()
+        let store = IssueStore(rootDir: root)
+        let path = try put(root, "new", "Old issue.md", "## Old issue\n\nlegacy body\n")
+        let mtime = try FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as! Date
+        let issue = store.read(path: path)!
+        let updated = store.updateBody(issue, body: "edited body")
+        XCTAssertEqual(updated?.title, "Old issue")
+        XCTAssertEqual(updated?.body, "edited body")
+        let content = try String(contentsOfFile: path, encoding: .utf8)
+        XCTAssertEqual(content, """
+        ---
+        title: Old issue
+        created: \(IssueStore.isoString(mtime))
+        ---
+
+        ## Old issue
+
+        edited body
+
+        """)
+    }
 }

@@ -178,6 +178,25 @@ public struct IssueStore: Sendable {
         }
     }
 
+    /// Rewrite the issue file in place with the new (trimmed) body, preserving the file's
+    /// title and created date. On a legacy file (no frontmatter) the derived title and the
+    /// file's modification date are promoted into frontmatter. Nil on empty body or
+    /// missing path.
+    @discardableResult
+    public func updateBody(_ issue: Issue, body: String) -> Issue? {
+        let b = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !b.isEmpty, let path = issue.path, let existing = read(path: path) else { return nil }
+        let created = existing.created ?? now()
+        let content = Self.render(title: existing.title, created: created, body: b)
+        do {
+            try content.write(toFile: path, atomically: true, encoding: .utf8)
+        } catch {
+            return nil
+        }
+        return Issue(title: existing.title, slug: existing.slug, body: b, path: path,
+                     created: created, status: existing.status)
+    }
+
     /// Move the issue file to the folder for `status` (created if needed), deduping name
     /// collisions. Returns the issue with updated path + status; nil on missing path or
     /// a failed move.
