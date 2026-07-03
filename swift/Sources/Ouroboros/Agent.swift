@@ -56,17 +56,23 @@ public func seedPrompt(issue: Issue, baseBranch: String, options: FixOptions, br
         action = "If it IS clear, you are in a dedicated git worktree on branch `\(br)`. " +
             "Implement it fully, verify it, rebase on `\(baseBranch)`, then merge back into `\(baseBranch)`. " +
             "If there are conflicts you cannot cleanly resolve, stop and leave the branch with a note. " +
-            "When merged cleanly, remove this worktree, then summarize what you changed."
+            "When merged cleanly, remove this worktree, then summarize what you changed. " +
+            "Also append a short `## Resolution` section (what changed, and the date) to the issue file " +
+            "and move it from `.issues/new/` to `.issues/done/` with `git mv`, committed on `\(baseBranch)`."
     case (true, .openPR):
         action = "If it IS clear, you are in a dedicated git worktree on branch `\(br)`. " +
             "Implement it fully, verify it, push the branch, and open a PR into `\(baseBranch)` with `gh pr create`. " +
-            "Do not merge. Then summarize what you changed."
+            "Do not merge. Then summarize what you changed. " +
+            "Append the PR URL to the issue file (it stays in `.issues/new/` until the PR lands)."
     case (false, .mergeIntoBase):
         action = "If it IS clear, implement it fully on the current branch, verify it, then commit. " +
-            "Then summarize what you changed."
+            "Then summarize what you changed. " +
+            "Also append a short `## Resolution` section to the issue file and move it from " +
+            "`.issues/new/` to `.issues/done/` with `git mv`, committed with the fix."
     case (false, .openPR):
         action = "If it IS clear, create a new branch `\(br)`, implement it fully, verify it, push, and " +
-            "open a PR into `\(baseBranch)` with `gh pr create`. Then summarize what you changed."
+            "open a PR into `\(baseBranch)` with `gh pr create`. Then summarize what you changed. " +
+            "Append the PR URL to the issue file (it stays in `.issues/new/` until the PR lands)."
     }
     return header + action
 }
