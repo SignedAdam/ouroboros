@@ -102,4 +102,37 @@ final class IssueTrackingTests: XCTestCase {
         let store = IssueStore(rootDir: tempDir())
         XCTAssertNil(store.read(path: "/nonexistent/nope.md"))
     }
+
+    // MARK: - list
+
+    private func put(_ root: String, _ status: String, _ name: String, _ content: String) throws -> String {
+        let d = (root as NSString).appendingPathComponent(".issues/\(status)")
+        try FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)
+        let p = (d as NSString).appendingPathComponent(name)
+        try content.write(toFile: p, atomically: true, encoding: .utf8)
+        return p
+    }
+
+    func testListScansStatusFoldersSortedCreatedDesc() throws {
+        let root = tempDir()
+        let store = IssueStore(rootDir: root)
+        _ = try put(root, "new", "Middle.md",
+                    "---\ntitle: Middle\ncreated: 2026-07-02T00:00:00Z\n---\n\n## Middle\n\nm\n")
+        _ = try put(root, "planned", "Newest.md",
+                    "---\ntitle: Newest\ncreated: 2026-07-03T00:00:00Z\n---\n\n## Newest\n\nn\n")
+        _ = try put(root, "done", "Oldest.md",
+                    "---\ntitle: Oldest\ncreated: 2026-07-01T00:00:00Z\n---\n\n## Oldest\n\no\n")
+        _ = try put(root, "new", "Undated.md",
+                    "---\ntitle: Undated\n---\n\n## Undated\n\nu\n")   // no created → sorts last
+        _ = try put(root, "new", "notes.txt", "not an issue")          // non-md ignored
+        // .issues/cancelled deliberately absent — must not blow up.
+        let issues = store.list()
+        XCTAssertEqual(issues.map(\.title), ["Newest", "Middle", "Oldest", "Undated"])
+        XCTAssertEqual(issues.map(\.status), [.planned, .new, .done, .new])
+        XCTAssertNil(issues.last?.created)
+    }
+
+    func testListEmptyRootReturnsEmpty() {
+        XCTAssertEqual(IssueStore(rootDir: tempDir()).list().count, 0)
+    }
 }

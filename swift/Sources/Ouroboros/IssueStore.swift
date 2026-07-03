@@ -150,4 +150,27 @@ public struct IssueStore: Sendable {
         return Issue(title: title, slug: IssueText.slugify(title), body: parsed.body, path: path,
                      created: created, status: status)
     }
+
+    /// All issues across the four status folders (existing ones only),
+    /// sorted created-descending; issues with no created date sort last.
+    public func list() -> [Issue] {
+        let fm = FileManager.default
+        var issues: [Issue] = []
+        for status in IssueStatus.allCases {
+            let d = statusDir(status)
+            guard let names = try? fm.contentsOfDirectory(atPath: d) else { continue }
+            for name in names.sorted() where name.lowercased().hasSuffix(".md") {
+                let p = (d as NSString).appendingPathComponent(name)
+                if let issue = read(path: p) { issues.append(issue) }
+            }
+        }
+        return issues.sorted { a, b in
+            switch (a.created, b.created) {
+            case let (x?, y?): return x != y ? x > y : (a.path ?? "") < (b.path ?? "")
+            case (.some, nil): return true
+            case (nil, .some): return false
+            case (nil, nil):   return (a.path ?? "") < (b.path ?? "")
+            }
+        }
+    }
 }
