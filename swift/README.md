@@ -17,7 +17,7 @@ headlessly and spawn nothing):
 | Type | Responsibility |
 |---|---|
 | `Issue` / `IssueText` | the issue model + `suggestTitle` (local heuristic: first line → 9 words/60 chars), `slugify`, `cleanTitle` |
-| `IssueStore` | writes `.issues/new/<Title>.md` as `## Title\n\nbody`, dedups collisions |
+| `IssueStore` | writes `.issues/new/<Title>.md` with frontmatter metadata (`title`, `created`), dedups collisions; `list()` / `read` / `updateBody` / `setStatus` over the status folders (`new`/`planned`/`done`/`cancelled` — status = folder, moving the file changes it); tolerates legacy files with no frontmatter |
 | `Agent` / `seedPrompt` | builds the agent argv + the seed prompt (worktree-or-in-place × merge-or-PR); presets `.claudeCode`, `.codex`, `.gemini`, `.pi`, `.custom(…)` |
 | `WorktreeManager` | `git worktree add` on a `fix/<slug>` branch off your base, with dedup |
 | `TerminalLauncher` | pluggable spawn: `.ghosttyTmuxTab` (new tab in your active tmux session inside Ghostty), `.osDefault` (Terminal.app), `.custom` |
@@ -45,6 +45,20 @@ ouroboros.handToAgent(issue, options: FixOptions(worktree: true, finish: .mergeI
 `FixOptions`:
 - `worktree: Bool` — run the fix in a fresh isolated worktree (default `true`). Off → work in place on the current branch.
 - `finish: .mergeIntoBase | .openPR` — when the agent is done, merge back into `baseBranch`, or open a PR with `gh`.
+
+## Issue tracking
+
+Issues live as markdown files with a tiny frontmatter (`title`, `created`); the parent
+folder is the status. Browse and manage them through the store:
+
+```swift
+let store = ouroboros.store                       // an IssueStore
+let issues = store.list()                         // all statuses, newest first
+let open = issues.filter { $0.status == .new }
+store.updateBody(open[0], body: "clarified repro steps…")   // edit in place, meta kept
+store.setStatus(open[0], .planned)                // moves the file to .issues/planned/
+let one = store.read(path: open[1].path!)         // re-parse a single file
+```
 
 ## Live title suggestion
 
