@@ -70,22 +70,40 @@ enum Harness: String, CaseIterable { case claude, codex
     var label: String { self == .claude ? "Claude" : "Codex" }
 }
 
-func available(claudeEnabled: Bool, codexEnabled: Bool) -> [Harness] {
-    func onPath(_ b: String) -> Bool {
-        let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        p.arguments = ["-lc", "command -v \(b)"]
-        p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
-        do { try p.run() } catch { return false }
-        p.waitUntilExit(); return p.terminationStatus == 0
+// The probe. ⚠ waitUntilExit PUMPS THE RUN LOOP: never call this from a SwiftUI
+// body / the main thread — it re-enters the UI update cycle mid-render and segfaults.
+func onPath(_ b: String) -> Bool {
+    let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/zsh")
+    p.arguments = ["-lc", "command -v \(b)"]
+    p.standardOutput = FileHandle.nullDevice; p.standardError = FileHandle.nullDevice
+    do { try p.run() } catch { return false }
+    p.waitUntilExit(); return p.terminationStatus == 0
+}
+
+// So: probe ONCE, off-main, into observable state (at launch + when the composer
+// opens), and make the getter the UI reads a PURE function of that cache:
+// in your @Observable store —
+var installedHarnessBinaries: Set<String> = []      // the cache the UI reads
+
+func refreshHarnessAvailability() {                  // call at launch / composer open
+    Task.detached(priority: .utility) {
+        let found = Set(Harness.allCases.map(\.binary).filter { onPath($0) })
+        await MainActor.run { self.installedHarnessBinaries = found }
     }
+}
+
+var availableHarnesses: [Harness] {                  // pure — safe in any view body
     var out: [Harness] = []
-    if claudeEnabled, onPath("claude") { out.append(.claude) }
-    if codexEnabled, onPath("codex") { out.append(.codex) }
+    if claudeEnabled, installedHarnessBinaries.contains("claude") { out.append(.claude) }
+    if codexEnabled, installedHarnessBinaries.contains("codex") { out.append(.codex) }
     return out
 }
 
 func agent(for h: Harness) -> Agent { h == .claude ? .claudeCode : .codex }
 ```
+
+Pin the purity with a test: empty cache + CLIs genuinely installed ⇒ `availableHarnesses`
+is empty (proves the getter never probes live).
 
 UX rule:
 - **0 available** → save the issue; don't offer a fix.

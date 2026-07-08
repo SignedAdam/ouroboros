@@ -40,6 +40,14 @@ full test suite.
 **The harness rule.** A harness is *available* iff its settings toggle is ON **and** its
 CLI is on PATH (`command -v claude` / `command -v codex` via a login shell — a
 GUI-launched app does not inherit the user's shell PATH otherwise).
+**⚠ Probe async, read cached.** The PATH probe blocks on the spawned process
+(`waitUntilExit` / equivalent), and on macOS that *pumps the run loop* — calling it
+synchronously from a SwiftUI `body`/render path re-enters the UI update cycle and
+segfaults. Run the probe on a background thread at app launch and when the
+composer/browser opens, store the result in observable state, and make the
+"available harnesses" getter a pure read of that cache. Pin this with a test: with
+the cache empty and the CLIs really installed, available must be empty (proves the
+getter never probes live).
 - 0 available → save the issue; show no fix offer (hint the user to Settings).
 - 1 available → one primary button: **Fix it**.
 - 2 available → one button per harness: **Fix with Claude** / **Fix with Codex**.
