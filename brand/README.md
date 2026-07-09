@@ -18,16 +18,17 @@ All values in a 100×100 viewBox, y-down, angles in degrees clockwise from +x
 | Element | Value |
 |---|---|
 | Ring center / radius | (50, 50) / **R = 38** |
-| Body stroke width | **9** (constant from −45° to 210°) |
-| Tail taper | linear **9 → 1.8** over **210° → 287°** |
-| Tail tip | ends at **287°** (= −73°), tucked **under** the head — being swallowed |
-| Head | ellipse **rx 15, ry 10.5**, center ON the ring at **−55°**, rotated to the tangent (−55°+90°) |
-| Eye | circle **r 2.9** at head-center + **(+3.4, −4.6)** — **negative space** (background shows through) |
-| Mouth gap | the arc from tip (−73°) to body start (−45°) is covered by the head; no visible break in the silhouette except where the taper vanishes |
+| Body width | **9** (constant from −33° to 210°) |
+| Tail taper | linear **9 → 1.8** over **210° → 292°** |
+| Tail tip | ends at **292°** (= −68°), entering the **open mouth** |
+| **Fractures** | the band is broken by 7 slash cuts at **18°, 55°, 96°, 150°, 192°, 231°, 248°** with half-gaps **1.3, 2.2, 1.1, 2.6, 1.2, 2.0, 1.0**°; every cut face slants **+4.5°** (same direction — one shatter, not a dashed ring) |
+| Head | open-jaw dart, polygon in the tangent frame at **−55°** (rotated −55°+90°), local points (x toward the body, −x toward the snout): **(−21,−2.2) (−12.5,−0.2) (−21.5,2.8) (−7,6.8) (11,4.8) (16,0) (11,−4.8) (−7,−6.8)** — the notch between the first three points is the mouth; the tail tip enters it |
+| Eye | slit quad, local points **(−9.5,−4.6) (−3.4,−3.3) (−2.8,−1.2) (−8.9,−2.5)** — **negative space** (background shows through) |
 
-Construction: the body is a single filled band (outer edge at `R + w(θ)/2`, inner at
-`R − w(θ)/2`, `w(θ)` per the taper above) — NOT stepped stroke segments; the head is
-drawn on top so the tail tip disappears into it.
+Construction: the body is a filled tapered band (outer edge `R + w(θ)/2`, inner
+`R − w(θ)/2`) cut into shards by the slash table — NOT stepped strokes, NOT a dashed
+ring; the outermost cut faces stay clean (body start hides under the head, the tip stays
+a point). The head is drawn on top; the thin tail tip must visibly reach between the jaws.
 
 ## Yours to theme (FREE)
 
@@ -41,12 +42,13 @@ drawn on top so the tail tip disappears into it.
 
 ## Not allowed
 
-- Changing the proportions, gap position, taper curve, or head shape.
-- Closing the coil into a plain ring (the taper-into-mouth IS the identity).
+- Changing the proportions, cut rhythm, slant direction, taper curve, or head shape.
+- Healing the fractures into a solid ring, or regularizing them into dashes.
+- Closing the mouth (the tail-into-jaws IS the identity).
 - Replacing it with a generic snake/bug/warning glyph.
 - Adding a third color for the eye, outlines around the silhouette, or text inside it.
 
 ## Legibility floor
 
-The mark stays readable down to ~16 px (ring + head knot). At 16–23 px: no eye. Below
-14 px, don't use the mark; use text.
+The mark stays readable down to ~16 px (fractures degrade into texture; ring + head knot
+survive). At 16–23 px: no eye. Below 14 px, don't use the mark; use text.
