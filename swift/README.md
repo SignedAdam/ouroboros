@@ -20,7 +20,7 @@ headlessly and spawn nothing):
 | `IssueStore` | writes `.issues/new/<Title>.md` with frontmatter metadata (`title`, `created`), dedups collisions; `list()` / `read` / `updateBody` / `setStatus` over the status folders (`new`/`planned`/`done`/`cancelled` — status = folder, moving the file changes it); tolerates legacy files with no frontmatter |
 | `Agent` / `seedPrompt` | builds the agent argv + the seed prompt (worktree-or-in-place × merge-or-PR); presets `.claudeCode`, `.codex`, `.gemini`, `.pi`, `.custom(…)` |
 | `WorktreeManager` | `git worktree add` on a `fix/<slug>` branch off your base, with dedup |
-| `TerminalLauncher` | pluggable spawn: `.ghosttyTmuxTab` (new tab in your active tmux session inside Ghostty), `.osDefault` (Terminal.app), `.custom` |
+| `TerminalLauncher` | pluggable spawn: `.ghosttyTmuxTab` (a tab in a dedicated `ouroboros` tmux session shown in its own Ghostty window — never your session), `.osDefault` (Terminal.app), `.custom` |
 | `Ouroboros` (facade) | `submit(title:body:)` → `handToAgent(_:options:)` |
 
 ## Quick start

@@ -23,7 +23,8 @@ full test suite.
 2. **Confirm step** — after Create: show the saved file path, then offer the fix per the
    *harness rule* below ("Fix it" / "Fix with X" buttons + "Not now").
 3. **Floating button** — a small, always-visible in-app button (bottom-right corner over
-   all screens unless the app's design dictates otherwise) that opens the composer.
+   all screens unless the app's design dictates otherwise) that opens the composer. Its
+   icon is **the Ouroboros mark** (see "The mark" below) — never a bug/warning glyph.
 4. **Menu section** — on macOS, a top menu-bar menu named **"Ouroboros"** with at least:
    *Report Issue…* (⌘⇧I) and *Issues…* (⌘⇧O). Non-macOS apps: the closest app-level
    equivalent (command palette entries, an app menu, a tray menu).
@@ -52,6 +53,22 @@ getter never probes live).
 - 1 available → one primary button: **Fix it**.
 - 2 available → one button per harness: **Fix with Claude** / **Fix with Codex**.
 Exactly ONE harness is ever passed to a fix invocation.
+
+## The mark (Olympic-rings rule)
+
+Every integration shows the Ouroboros mark — the self-eating snake — on its entry points.
+It works like the Olympic rings: **geometry fixed, dressing yours.** The canonical
+construction (exact proportions, angles, taper, what's fixed vs. free) is
+`$OURO/brand/README.md`, with a reference SVG at `$OURO/brand/ouroboros-mark.svg`
+(renders in `currentColor`; the eye is negative space).
+
+- **Swift apps**: use `OuroborosMark` from the vendored package's `OuroborosUI` product
+  (add `.product(name: "OuroborosUI", package: "Ouroboros")`) — it implements the
+  canonical geometry and takes the app's `foregroundStyle`. Theme the container
+  (colors, hover, glow) to the app; do not redraw the shape.
+- **Other languages**: port from the SVG / the constants table in `brand/README.md`.
+- Theming freedom and hard limits are listed in `brand/README.md` — read it before
+  styling. Never substitute a generic snake, bug, or warning icon.
 
 ## Phase 0 — Recon (do this before writing anything)
 
@@ -137,8 +154,11 @@ Agent.claudeCode  // argv template ["claude", "{prompt}"]
 Agent.codex       // ["codex", "{prompt}"]
 Agent.custom("bin", "flag", "{prompt}")
 
-// Terminal spawn — default opens a new tmux window in the user's active session
-// (surfaces as a new Ghostty tab); falls back to a detached session + Ghostty attach.
+// Terminal spawn — agents get a DEDICATED tmux session ("ouroboros" by default,
+// sessionName: to rename): each fix is a tab there, and a Ghostty window attaches
+// only when nobody is watching that session. The user's own terminal/tmux session
+// is never touched (hijacking their current view reads as "a terminal spawned on
+// top of mine").
 TerminalLauncher(kind: .ghosttyTmuxTab | .osDefault | .custom)
 
 // The facade — construct once per fix, from settings:

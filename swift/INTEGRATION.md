@@ -147,6 +147,9 @@ CommandGroup(after: .appSettings) {
 - Ensure `claude`/`codex`, `tmux`, Ghostty, and `gh` (only for PR finish) are on PATH.
 - Non-Ghostty machines: use `TerminalLauncher(kind: .osDefault)` (Terminal.app) or
   `.custom` with your own `customLaunch` closure.
+- `.ghosttyTmuxTab` puts every fix in a dedicated `ouroboros` tmux session (its own
+  Ghostty window; tabs per fix). It never opens windows in the user's own tmux
+  session — that yanks their current view. `sessionName:` renames the session.
 
 ## Notes
 
