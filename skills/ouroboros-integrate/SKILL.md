@@ -54,21 +54,18 @@ getter never probes live).
 - 2 available → one button per harness: **Fix with Claude** / **Fix with Codex**.
 Exactly ONE harness is ever passed to a fix invocation.
 
-## The mark (Olympic-rings rule)
+## The mark
 
-Every integration shows the Ouroboros mark — the self-eating snake — on its entry points.
-It works like the Olympic rings: **geometry fixed, dressing yours.** The canonical
-construction (exact proportions, angles, taper, what's fixed vs. free) is
-`$OURO/brand/README.md`, with a reference SVG at `$OURO/brand/ouroboros-mark.svg`
-(renders in `currentColor`), plus two reference dressings (`-holo`, `-multicolor`).
+Entry points (the floating button at minimum) use the Ouroboros mark. Reference:
+`$OURO/brand/README.md` — geometry table, theming rules, and the SVGs
+(`ouroboros-mark.svg`, `-holo`, `-multicolor`). Geometry is fixed; color, effects, and
+container are the app's.
 
 - **Swift apps**: use `OuroborosMark` from the vendored package's `OuroborosUI` product
-  (add `.product(name: "OuroborosUI", package: "Ouroboros")`) — it implements the
-  canonical geometry and takes the app's `foregroundStyle`. Theme the container
-  (colors, hover, glow) to the app; do not redraw the shape.
-- **Other languages**: port from the SVG / the constants table in `brand/README.md`.
-- Theming freedom and hard limits are listed in `brand/README.md` — read it before
-  styling. Never substitute a generic snake, bug, or warning icon.
+  (add `.product(name: "OuroborosUI", package: "Ouroboros")`). It takes the app's
+  `foregroundStyle`, or `palette:` for per-shard colors. Do not redraw the shape.
+- **Other languages**: port from the SVG / the constants table.
+- No substitute icons.
 
 ## Phase 0 — Recon (do this before writing anything)
 
