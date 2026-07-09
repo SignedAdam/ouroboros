@@ -4,10 +4,13 @@ public struct AgentInvocation: Sendable, Equatable {
     public let argv: [String]
     public let cwd: String
     public let label: String
-    public init(argv: [String], cwd: String, label: String) {
+    /// Human-readable issue title, for display in launch UIs (cinema window banner).
+    public let title: String
+    public init(argv: [String], cwd: String, label: String, title: String = "") {
         self.argv = argv
         self.cwd = cwd
         self.label = label
+        self.title = title
     }
 }
 
@@ -28,9 +31,10 @@ public struct Agent: Sendable {
         self.name = name
         self.template = template
     }
-    public func invocation(prompt: String, cwd: String, label: String) -> AgentInvocation {
+    public func invocation(prompt: String, cwd: String, label: String,
+                           title: String = "") -> AgentInvocation {
         let argv = template.map { $0 == "{prompt}" ? prompt : $0 }
-        return AgentInvocation(argv: argv, cwd: cwd, label: label)
+        return AgentInvocation(argv: argv, cwd: cwd, label: label, title: title)
     }
     public static let claudeCode = Agent(name: "claude_code", template: ["claude", "{prompt}"])
     public static let codex = Agent(name: "codex", template: ["codex", "{prompt}"])

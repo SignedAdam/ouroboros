@@ -81,6 +81,46 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertTrue(box.runs[0].contains("fixers"))
     }
 
+    // Cinema mode: one small Ghostty window running the generated show script.
+    func testCinemaOpensSmallGhosttyWindowWithGeneratedScript() throws {
+        final class Box: @unchecked Sendable { var runs: [[String]] = [] }
+        let box = Box()
+        let launcher = TerminalLauncher(kind: .ghosttyCinemaWindow, run: { box.runs.append($0) })
+        launcher.launch(inv)
+        XCTAssertEqual(box.runs.count, 1)
+        let argv = box.runs[0]
+        XCTAssertEqual(Array(argv.prefix(4)), ["open", "-na", "Ghostty", "--args"])
+        XCTAssertTrue(argv.contains("--window-width=80"))
+        XCTAssertTrue(argv.contains("--window-height=21"))
+        XCTAssertEqual(argv[argv.count - 2], "zsh")
+        let script = argv[argv.count - 1]
+        XCTAssertTrue(script.hasSuffix(".command"))
+        let content = try String(contentsOfFile: script, encoding: .utf8)
+        XCTAssertTrue(content.contains("MARQUEE_PY"))
+        try? FileManager.default.removeItem(atPath: script)
+    }
+
+    // The generated show script: session per fix, agent + status windows, attach,
+    // auto-close (kill-session) when the agent finishes, title carried as base64.
+    func testCinemaScriptContent() {
+        let titled = AgentInvocation(argv: ["claude", "the prompt"], cwd: "/repo/wt",
+                                     label: "fix-x", title: "Fix the $HOME 'login'")
+        let s = TerminalLauncher.cinemaScript(titled)
+        XCTAssertTrue(s.contains("tmux new-session -d -s \"$SESSION\" -c /repo/wt -n agent"))
+        // The agent command is itself shell-quoted as ONE tmux argument.
+        XCTAssertTrue(s.contains("'claude '\\''the prompt'\\'''"))
+        XCTAssertTrue(s.contains("-n status"))
+        XCTAssertTrue(s.contains("exec tmux attach -t \"$SESSION\""))
+        XCTAssertTrue(s.contains("kill-session"))
+        XCTAssertTrue(s.contains("set-option -t \"$SESSION\" status off"))
+        // The title crosses the shell layers base64-encoded — never raw.
+        let b64 = Data("Fix the $HOME 'login'".utf8).base64EncodedString()
+        XCTAssertTrue(s.contains(b64))
+        XCTAssertFalse(s.contains("Fix the $HOME"))
+        // Heredoc terminator must be at column 0 or zsh never ends the marquee file.
+        XCTAssertTrue(s.contains("\nMARQUEE_PY\n"))
+    }
+
     func testOsDefaultOpensScriptInTerminal() {
         final class Box: @unchecked Sendable { var runs: [[String]] = [] }
         let box = Box()

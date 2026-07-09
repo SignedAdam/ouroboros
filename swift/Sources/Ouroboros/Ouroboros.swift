@@ -38,7 +38,7 @@ public struct Ouroboros: Sendable {
             branch = wt.branch
         }
         let prompt = seedPrompt(issue: issue, baseBranch: baseBranch, options: options, branch: branch)
-        let inv = agent.invocation(prompt: prompt, cwd: cwd, label: issue.slug)
+        let inv = agent.invocation(prompt: prompt, cwd: cwd, label: issue.slug, title: issue.title)
         terminal.launch(inv)
         return true
     }
