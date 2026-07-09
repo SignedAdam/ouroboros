@@ -60,7 +60,7 @@ Every integration shows the Ouroboros mark — the self-eating snake — on its 
 It works like the Olympic rings: **geometry fixed, dressing yours.** The canonical
 construction (exact proportions, angles, taper, what's fixed vs. free) is
 `$OURO/brand/README.md`, with a reference SVG at `$OURO/brand/ouroboros-mark.svg`
-(renders in `currentColor`; the eye is negative space).
+(renders in `currentColor`), plus two reference dressings (`-holo`, `-multicolor`).
 
 - **Swift apps**: use `OuroborosMark` from the vendored package's `OuroborosUI` product
   (add `.product(name: "OuroborosUI", package: "Ouroboros")`) — it implements the
