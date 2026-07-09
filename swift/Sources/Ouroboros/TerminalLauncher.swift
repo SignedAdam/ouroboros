@@ -13,17 +13,23 @@ public struct TerminalLauncher: Sendable {
     public enum Kind: String, Sendable { case ghosttyTmuxTab, osDefault, custom }
 
     public let kind: Kind
+    /// The dedicated tmux session agents live in. Agents NEVER open windows in the
+    /// user's own session — selecting a new window there yanks their current view
+    /// ("a terminal spawned on top of mine"). All fixes stack as tabs here instead.
+    public let sessionName: String
     let run: @Sendable ([String]) -> Void
     let capture: @Sendable ([String]) -> String
     let customLaunch: (@Sendable (AgentInvocation, String) -> Void)?
     let writeScript: @Sendable (AgentInvocation) -> String
 
     public init(kind: Kind = .ghosttyTmuxTab,
+                sessionName: String = "ouroboros",
                 run: (@Sendable ([String]) -> Void)? = nil,
                 capture: (@Sendable ([String]) -> String)? = nil,
                 customLaunch: (@Sendable (AgentInvocation, String) -> Void)? = nil,
                 writeScript: (@Sendable (AgentInvocation) -> String)? = nil) {
         self.kind = kind
+        self.sessionName = sessionName
         self.run = run ?? TerminalLauncher.defaultRun
         self.capture = capture ?? TerminalLauncher.defaultCapture
         self.customLaunch = customLaunch
@@ -41,24 +47,28 @@ public struct TerminalLauncher: Sendable {
 
     private func launchGhosttyTmuxTab(_ inv: AgentInvocation, _ script: String) {
         let runIn = "zsh \(shquote(script))"
-        if let session = activeTmuxSession() {
-            run(["tmux", "new-window", "-t", session, "-c", inv.cwd, "-n", inv.label, runIn])
+        // First fix creates the dedicated session; later fixes add windows (tabs) to it.
+        if sessionExists() {
+            run(["tmux", "new-window", "-t", sessionName, "-c", inv.cwd, "-n", inv.label, runIn])
         } else {
-            run(["tmux", "new-session", "-d", "-s", inv.label, "-c", inv.cwd, runIn])
-            run(["open", "-na", "Ghostty", "--args", "-e", "tmux", "attach", "-t", inv.label])
+            run(["tmux", "new-session", "-d", "-s", sessionName, "-n", inv.label,
+                 "-c", inv.cwd, runIn])
+        }
+        // Surface it only when nobody is watching: attach a Ghostty window to the
+        // agents' session. If one is already attached, the new tab appears there.
+        if !sessionHasClient() {
+            run(["open", "-na", "Ghostty", "--args", "-e", "tmux", "attach", "-t", sessionName])
         }
     }
 
-    private func activeTmuxSession() -> String? {
-        let out = capture(["tmux", "list-clients", "-F", "#{client_activity} #{session_name}"])
-        var best: String?
-        var bestT = -1
-        for line in out.split(separator: "\n") {
-            let parts = line.split(separator: " ", maxSplits: 1)
-            guard parts.count == 2, let t = Int(parts[0]) else { continue }
-            if t > bestT { bestT = t; best = String(parts[1]) }
-        }
-        return best
+    private func sessionExists() -> Bool {
+        capture(["tmux", "list-sessions", "-F", "#{session_name}"])
+            .split(separator: "\n").contains { $0 == Substring(sessionName) }
+    }
+
+    private func sessionHasClient() -> Bool {
+        !capture(["tmux", "list-clients", "-t", sessionName, "-F", "#{client_tty}"])
+            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     // MARK: defaults (run via login shell so homebrew PATH resolves from Finder-launched apps)
