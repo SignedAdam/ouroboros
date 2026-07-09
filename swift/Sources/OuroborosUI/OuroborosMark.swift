@@ -2,10 +2,10 @@ import SwiftUI
 
 /// The Ouroboros mark — reference implementation of the canonical geometry in
 /// `brand/README.md` (fixed proportions; color/theme is the host app's).
-/// A fractured coil tapering into an open-jaw dart head; renders in the current
-/// `foregroundStyle`; the slit eye is true negative space (erased, so the
-/// background shows through). Scales with its frame; keep it ≥ 16 pt. The eye
-/// auto-hides below 24 pt (`eye:` overrides).
+/// A chevron-cracked coil tapering into a sleek bezier viper head; renders in
+/// the current `foregroundStyle`; the slit eye is true negative space (erased,
+/// so the background shows through). Scales with its frame; keep it ≥ 16 pt.
+/// The eye auto-hides below 24 pt (`eye:` overrides).
 public struct OuroborosMark: View {
     public var eye: Bool?
 
@@ -19,64 +19,68 @@ public struct OuroborosMark: View {
                 let a = deg * .pi / 180
                 return CGPoint(x: cx + r * cos(a) * s, y: cy + r * sin(a) * s)
             }
+            func lp(_ x: Double, _ y: Double) -> CGPoint { CGPoint(x: x * s, y: y * s) }
 
             // Canonical constants — brand/README.md. Do not tweak these here;
             // theming happens via foregroundStyle/frame, never the geometry.
             let R = 38.0, wBody = 9.0, wTip = 1.8
             let aStart = -33.0, aTaper = 210.0, aTip = 292.0, headAngle = -55.0
-            let cuts: [(Double, Double)] = [(18, 1.3), (55, 2.2), (96, 1.1), (150, 2.6),
-                                            (192, 1.2), (231, 2.0), (248, 1.0)]
-            let slant = 4.5
+            let cuts = [30.0, 95.0, 160.0, 225.0], gap = 2.4, zig = 3.6
             func w(_ a: Double) -> Double {
                 a <= aTaper ? wBody : wBody + (wTip - wBody) * (a - aTaper) / (aTip - aTaper)
             }
 
-            // Body: the tapered band broken into shards by same-direction slash cuts.
+            // Body: tapered band broken into shards by chevron (lightning) cracks —
+            // each crack face has a mid-width vertex swung -zig°, same direction on
+            // every crack, so they read as breaks, never dashes.
             var bounds: [Double] = [aStart]
-            for (a, g) in cuts { bounds.append(a - g); bounds.append(a + g) }
+            for a in cuts { bounds.append(a - gap); bounds.append(a + gap) }
             bounds.append(aTip)
             for i in stride(from: 0, to: bounds.count, by: 2) {
                 let a0 = bounds[i], a1 = bounds[i + 1]
-                let s0 = i > 0 ? slant : 0.0             // body start hides under the head
-                let s1 = i + 2 < bounds.count ? slant : 0.0   // the tip stays a clean point
-                let n = max(2, Int((a1 - a0) / 2))
+                let n = max(2, Int((a1 - a0) / 2.5))
                 var shard = Path()
                 for k in 0...n {
-                    let a = a0 + s0 + (a1 + s1 - a0 - s0) * Double(k) / Double(n)
+                    let a = a0 + (a1 - a0) * Double(k) / Double(n)
                     let p = pt(a, R + w(a) / 2)
                     if k == 0 { shard.move(to: p) } else { shard.addLine(to: p) }
                 }
+                if i + 2 < bounds.count { shard.addLine(to: pt(a1 - zig, R)) }
                 for k in (0...n).reversed() {
-                    let a = a0 - s0 + (a1 - s1 - a0 + s0) * Double(k) / Double(n)
+                    let a = a0 + (a1 - a0) * Double(k) / Double(n)
                     shard.addLine(to: pt(a, R - w(a) / 2))
                 }
+                if i > 0 { shard.addLine(to: pt(a0 - zig, R)) }
                 shard.closeSubpath()
                 ctx.fill(shard, with: .style(.foreground))
             }
 
-            // Head: open-jaw dart in the tangent frame; the tail tip enters the mouth.
+            // Head: sleek viper bezier in the tangent frame; the tail enters the mouth.
             let hc = pt(headAngle, R)
-            let headPts: [(Double, Double)] = [(-21, -2.2), (-12.5, -0.2), (-21.5, 2.8),
-                                               (-7, 6.8), (11, 4.8), (16, 0),
-                                               (11, -4.8), (-7, -6.8)]
             var headCtx = ctx
             headCtx.translateBy(x: hc.x, y: hc.y)
             headCtx.rotate(by: .degrees(headAngle + 90))
             var head = Path()
-            head.move(to: CGPoint(x: headPts[0].0 * s, y: headPts[0].1 * s))
-            for (x, y) in headPts.dropFirst() { head.addLine(to: CGPoint(x: x * s, y: y * s)) }
+            head.move(to: lp(-19.5, -0.8))
+            head.addCurve(to: lp(2, -8.0), control1: lp(-13, -4.8), control2: lp(-6, -7.6))
+            head.addCurve(to: lp(16, -2.5), control1: lp(8, -8.3), control2: lp(14, -6.0))
+            head.addCurve(to: lp(16, 2.5), control1: lp(17.2, -0.8), control2: lp(17.2, 0.8))
+            head.addCurve(to: lp(2, 8.0), control1: lp(14, 6.0), control2: lp(8, 8.3))
+            head.addCurve(to: lp(-12.8, 3.6), control1: lp(-4, 7.7), control2: lp(-9, 5.6))
+            head.addLine(to: lp(-17.5, 4.6))
+            head.addCurve(to: lp(-8.2, 0.9), control1: lp(-14, 2.2), control2: lp(-11, 1.2))
+            head.addCurve(to: lp(-19.5, -0.8), control1: lp(-11.5, 0.2), control2: lp(-15.5, -0.4))
             head.closeSubpath()
             headCtx.fill(head, with: .style(.foreground))
 
-            // Eye: a slit punched out — the background shows through.
+            // Eye: a slit triangle punched out — the background shows through.
             if eye ?? (min(size.width, size.height) >= 24) {
-                let eyePts: [(Double, Double)] = [(-9.5, -4.6), (-3.4, -3.3),
-                                                  (-2.8, -1.2), (-8.9, -2.5)]
                 var eyeCtx = headCtx
                 eyeCtx.blendMode = .clear
                 var slit = Path()
-                slit.move(to: CGPoint(x: eyePts[0].0 * s, y: eyePts[0].1 * s))
-                for (x, y) in eyePts.dropFirst() { slit.addLine(to: CGPoint(x: x * s, y: y * s)) }
+                slit.move(to: lp(-9.6, -4.6))
+                slit.addLine(to: lp(-3.2, -3.4))
+                slit.addLine(to: lp(-8.6, -2.4))
                 slit.closeSubpath()
                 eyeCtx.fill(slit, with: .color(.black))
             }

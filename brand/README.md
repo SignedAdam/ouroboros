@@ -21,14 +21,14 @@ All values in a 100×100 viewBox, y-down, angles in degrees clockwise from +x
 | Body width | **9** (constant from −33° to 210°) |
 | Tail taper | linear **9 → 1.8** over **210° → 292°** |
 | Tail tip | ends at **292°** (= −68°), entering the **open mouth** |
-| **Fractures** | the band is broken by 7 slash cuts at **18°, 55°, 96°, 150°, 192°, 231°, 248°** with half-gaps **1.3, 2.2, 1.1, 2.6, 1.2, 2.0, 1.0**°; every cut face slants **+4.5°** (same direction — one shatter, not a dashed ring) |
-| Head | open-jaw dart, polygon in the tangent frame at **−55°** (rotated −55°+90°), local points (x toward the body, −x toward the snout): **(−21,−2.2) (−12.5,−0.2) (−21.5,2.8) (−7,6.8) (11,4.8) (16,0) (11,−4.8) (−7,−6.8)** — the notch between the first three points is the mouth; the tail tip enters it |
-| Eye | slit quad, local points **(−9.5,−4.6) (−3.4,−3.3) (−2.8,−1.2) (−8.9,−2.5)** — **negative space** (background shows through) |
+| **Fractures** | the band is broken by **4 chevron cracks** at **30°, 95°, 160°, 225°**, half-gap **2.4°** each; every crack face is a **lightning break**: a mid-width vertex swung **−3.6°** (toward the crack on one face, into the shard on the other), the same direction on all cracks — cracks, never dashes |
+| Head | sleek viper head, a smooth bezier path in the tangent frame at **−55°** (rotated −55°+90°; −x = snout, toward the incoming tail): `M -19.5 -0.8 C -13 -4.8 -6 -7.6 2 -8.0 C 8 -8.3 14 -6.0 16 -2.5 C 17.2 -0.8 17.2 0.8 16 2.5 C 14 6.0 8 8.3 2 8.0 C -4 7.7 -9 5.6 -12.8 3.6 L -17.5 4.6 C -14 2.2 -11 1.2 -8.2 0.9 C -11.5 0.2 -15.5 -0.4 -19.5 -0.8 Z` — the notch between snout and lower-jaw tip is the mouth; the tail tip enters it |
+| Eye | slit triangle, local points **(−9.6,−4.6) (−3.2,−3.4) (−8.6,−2.4)** — **negative space** (background shows through) |
 
 Construction: the body is a filled tapered band (outer edge `R + w(θ)/2`, inner
-`R − w(θ)/2`) cut into shards by the slash table — NOT stepped strokes, NOT a dashed
-ring; the outermost cut faces stay clean (body start hides under the head, the tip stays
-a point). The head is drawn on top; the thin tail tip must visibly reach between the jaws.
+`R − w(θ)/2`) broken into shards by the chevron-crack table — NOT stepped strokes, NOT a
+dashed ring; the outermost faces stay clean (body start hides under the head, the tip
+stays a point). The head is drawn on top; the thin tail tip must visibly reach the mouth.
 
 ## Yours to theme (FREE)
 
