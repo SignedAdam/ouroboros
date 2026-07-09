@@ -154,12 +154,19 @@ Agent.claudeCode  // argv template ["claude", "{prompt}"]
 Agent.codex       // ["codex", "{prompt}"]
 Agent.custom("bin", "flag", "{prompt}")
 
-// Terminal spawn — agents get a DEDICATED tmux session ("ouroboros" by default,
-// sessionName: to rename): each fix is a tab there, and a Ghostty window attaches
-// only when nobody is watching that session. The user's own terminal/tmux session
-// is never touched (hijacking their current view reads as "a terminal spawned on
-// top of mine").
-TerminalLauncher(kind: .ghosttyTmuxTab | .osDefault | .custom)
+// Terminal spawn — two Ghostty modes plus fallbacks:
+// .ghosttyCinemaWindow (RECOMMENDED DEFAULT on macOS): each fix opens its own
+//   small Ghostty window (80×21) fronted by a marquee — the Ouroboros banner,
+//   "fixing your issue: <title>", a live elapsed timer, and hotkeys
+//   ([p] peek at the agent's last output, [a] watch the agent live,
+//   [q] hide the window while the agent keeps running). When the agent
+//   finishes, the window flashes "✔ done MM:SS" and closes itself.
+// .ghosttyTmuxTab: fixes stack as tabs in a dedicated "ouroboros" tmux session
+//   ("sessionName:" to rename) shown in one Ghostty window. Never touches the
+//   user's own tmux session (hijacking their view reads as "a terminal spawned
+//   on top of mine").
+// Give the user a settings toggle between the two; default to cinema.
+TerminalLauncher(kind: .ghosttyCinemaWindow | .ghosttyTmuxTab | .osDefault | .custom)
 
 // The facade — construct once per fix, from settings:
 Ouroboros(projectDir: repoRoot, agent: <one Agent>, terminal: TerminalLauncher(kind: .ghosttyTmuxTab),
