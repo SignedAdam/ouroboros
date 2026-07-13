@@ -153,15 +153,14 @@ Agent.custom("bin", "flag", "{prompt}")
 
 // Terminal spawn — two Ghostty modes plus fallbacks:
 // .ghosttyCinemaWindow (RECOMMENDED DEFAULT on macOS): each fix opens its own
-//   small Ghostty window (80×21) fronted by a marquee — the Ouroboros banner,
-//   "fixing your issue: <title>", a live elapsed timer, and hotkeys
-//   ([p] peek at the agent's last output, [a] watch the agent live,
-//   [q] hide the window while the agent keeps running). When the agent
-//   finishes, the window flashes "✔ done MM:SS" and closes itself.
+//   Ghostty window (110×32), NO tmux: a splash (Ouroboros banner +
+//   "fixing your issue: <title>"), then the agent runs live in that window —
+//   the user watches it and can type to it (permission prompts etc.). When the
+//   agent exits, the window closes itself. Closing the window stops that fix.
 // .ghosttyTmuxTab: fixes stack as tabs in a dedicated "ouroboros" tmux session
 //   ("sessionName:" to rename) shown in one Ghostty window. Never touches the
-//   user's own tmux session (hijacking their view reads as "a terminal spawned
-//   on top of mine").
+//   user's own tmux session, and the post-agent shell runs `zsh -f` (no rc
+//   files — a .zshrc session picker must not hijack the tab).
 // Give the user a settings toggle between the two; default to cinema.
 TerminalLauncher(kind: .ghosttyCinemaWindow | .ghosttyTmuxTab | .osDefault | .custom)
 
