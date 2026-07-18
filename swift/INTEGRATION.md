@@ -55,7 +55,7 @@ func makeOuroboros(agent: Agent, repoRoot: String, configuredBase: String) -> Ou
         return head.isEmpty ? "main" : head
     }()
     return Ouroboros(projectDir: repoRoot, agent: agent,
-                     terminal: TerminalLauncher(kind: .ghosttyTmuxTab), baseBranch: base)
+                     terminal: TerminalLauncher(kind: .ghosttyCinemaWindow), baseBranch: base)
 }
 ```
 
@@ -144,12 +144,17 @@ CommandGroup(after: .appSettings) {
 ## 6. Housekeeping
 
 - Add `.ouroboros/` to the app repo's `.gitignore` (worktrees + temp launch scripts).
-- Ensure `claude`/`codex`, `tmux`, Ghostty, and `gh` (only for PR finish) are on PATH.
+- Ensure `claude`/`codex` and Ghostty are on PATH (`tmux` only for `.ghosttyTmuxTab`;
+  `gh` only for PR finish).
 - Non-Ghostty machines: use `TerminalLauncher(kind: .osDefault)` (Terminal.app) or
   `.custom` with your own `customLaunch` closure.
-- `.ghosttyTmuxTab` puts every fix in a dedicated `ouroboros` tmux session (its own
-  Ghostty window; tabs per fix). It never opens windows in the user's own tmux
-  session — that yanks their current view. `sessionName:` renames the session.
+- `.ghosttyCinemaWindow` (recommended default): one Ghostty window per fix — splash
+  banner, then the agent runs live in it (user can type to it); the window closes
+  itself when the agent exits. Launched via the Ghostty binary, never `open -na`
+  (that adds the instance's default window as a second tab).
+- `.ghosttyTmuxTab`: fixes stack as tabs in a dedicated `ouroboros` tmux session,
+  never the user's own; the post-agent shell runs `zsh -f` (no rc files, so a
+  .zshrc session picker can't hijack the tab). `sessionName:` renames the session.
 
 ## Notes
 

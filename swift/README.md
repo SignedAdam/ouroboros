@@ -20,7 +20,7 @@ headlessly and spawn nothing):
 | `IssueStore` | writes `.issues/new/<Title>.md` with frontmatter metadata (`title`, `created`), dedups collisions; `list()` / `read` / `updateBody` / `setStatus` over the status folders (`new`/`planned`/`done`/`cancelled` — status = folder, moving the file changes it); tolerates legacy files with no frontmatter |
 | `Agent` / `seedPrompt` | builds the agent argv + the seed prompt (worktree-or-in-place × merge-or-PR); presets `.claudeCode`, `.codex`, `.gemini`, `.pi`, `.custom(…)` |
 | `WorktreeManager` | `git worktree add` on a `fix/<slug>` branch off your base, with dedup |
-| `TerminalLauncher` | pluggable spawn: `.ghosttyTmuxTab` (a tab in a dedicated `ouroboros` tmux session shown in its own Ghostty window — never your session), `.osDefault` (Terminal.app), `.custom` |
+| `TerminalLauncher` | pluggable spawn: `.ghosttyCinemaWindow` (default choice: one Ghostty window per fix — splash, then the agent live; closes itself on finish), `.ghosttyTmuxTab` (tabs in a dedicated `ouroboros` tmux session — never your session; needs tmux), `.osDefault` (Terminal.app), `.custom` |
 | `Ouroboros` (facade) | `submit(title:body:)` → `handToAgent(_:options:)` |
 
 ## Quick start
@@ -31,7 +31,7 @@ import Ouroboros
 let ouroboros = Ouroboros(
     projectDir: "/path/to/your/repo",          // where .issues/ lives and the agent runs
     agent: .claudeCode,                         // or .codex
-    terminal: TerminalLauncher(kind: .ghosttyTmuxTab),
+    terminal: TerminalLauncher(kind: .ghosttyCinemaWindow),
     baseBranch: "main"                          // fixes merge back / PR into this
 )
 
@@ -88,8 +88,8 @@ instead (see `INTEGRATION.md`).
 
 - macOS 14+, Swift 6.
 - On PATH (resolved via a login shell, so a Finder-launched app finds homebrew): the
-  agent CLI you use (`claude` / `codex`), plus `tmux` and Ghostty for `.ghosttyTmuxTab`,
-  and `gh` if you use `finish: .openPR`.
+  agent CLI you use (`claude` / `codex`) and Ghostty; `tmux` only for `.ghosttyTmuxTab`;
+  `gh` only for `finish: .openPR`.
 
 ## Integrating into your app
 

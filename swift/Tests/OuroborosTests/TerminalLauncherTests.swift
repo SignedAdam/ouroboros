@@ -44,8 +44,8 @@ final class TerminalLauncherTests: XCTestCase {
             writeScript: { _ in "/tmp/launch.command" })
         launcher.launch(inv)
         XCTAssertEqual(box.runs[0].prefix(2), ["tmux", "new-window"])
-        XCTAssertEqual(box.runs[1].prefix(2), ["open", "-na"])
-        XCTAssertTrue(box.runs[1].contains("Ghostty"))
+        XCTAssertEqual(box.runs[1].first, "/Applications/Ghostty.app/Contents/MacOS/ghostty")
+        XCTAssertTrue(box.runs[1].contains("attach"))
         XCTAssertTrue(box.runs[1].contains("ouroboros"))
     }
 
@@ -64,8 +64,8 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertTrue(first.contains("ouroboros"))
         XCTAssertTrue(first.contains("fix-x"))
         XCTAssertFalse(first.contains("main"))
-        XCTAssertEqual(box.runs[1].prefix(2), ["open", "-na"])
-        XCTAssertTrue(box.runs[1].contains("Ghostty"))
+        XCTAssertEqual(box.runs[1].first, "/Applications/Ghostty.app/Contents/MacOS/ghostty")
+        XCTAssertTrue(box.runs[1].contains("attach"))
     }
 
     // The dedicated session name is configurable.
@@ -82,17 +82,23 @@ final class TerminalLauncherTests: XCTestCase {
     }
 
     // Cinema mode: one Ghostty window running the generated splash+agent script.
-    // No tmux anywhere — the agent owns the window's TTY directly.
-    func testCinemaOpensGhosttyWindowWithGeneratedScript() throws {
+    // Launched via the Ghostty BINARY, never `open -na` — `open` adds the new
+    // instance's default window (the user's shell/session picker) as a second tab.
+    func testCinemaLaunchesGhosttyBinaryDirectlyWithGeneratedScript() throws {
         final class Box: @unchecked Sendable { var runs: [[String]] = [] }
         let box = Box()
-        let launcher = TerminalLauncher(kind: .ghosttyCinemaWindow, run: { box.runs.append($0) })
+        let launcher = TerminalLauncher(
+            kind: .ghosttyCinemaWindow,
+            run: { box.runs.append($0) },
+            capture: { argv in argv.first == "command" ? "/opt/homebrew/bin/ghostty\n" : "" })
         launcher.launch(inv)
         XCTAssertEqual(box.runs.count, 1)
         let argv = box.runs[0]
-        XCTAssertEqual(Array(argv.prefix(4)), ["open", "-na", "Ghostty", "--args"])
+        XCTAssertEqual(argv.first, "/opt/homebrew/bin/ghostty")   // PATH-resolved binary
+        XCTAssertFalse(argv.contains("open"))
         XCTAssertTrue(argv.contains("--window-width=110"))
         XCTAssertTrue(argv.contains("--window-height=32"))
+        XCTAssertTrue(argv.contains("--quit-after-last-window-closed=true"))
         XCTAssertEqual(argv[argv.count - 2], "zsh")
         let script = argv[argv.count - 1]
         XCTAssertTrue(script.hasSuffix(".command"))
@@ -100,6 +106,14 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertTrue(content.contains("fixing your issue"))
         XCTAssertFalse(content.contains("tmux"))
         try? FileManager.default.removeItem(atPath: script)
+    }
+
+    // No `ghostty` on PATH → fall back to the app bundle's binary.
+    func testGhosttyBinaryFallsBackToAppBundle() {
+        let launcher = TerminalLauncher(kind: .ghosttyCinemaWindow, run: { _ in },
+                                        capture: { _ in "" })
+        XCTAssertEqual(launcher.ghosttyBinary(),
+                       "/Applications/Ghostty.app/Contents/MacOS/ghostty")
     }
 
     // The splash script: banner + title, then exec the agent in place (so the

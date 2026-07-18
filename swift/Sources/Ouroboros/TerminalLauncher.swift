@@ -46,12 +46,15 @@ public struct TerminalLauncher: Sendable {
         }
     }
 
-    // Cinema mode: a small dedicated Ghostty window per fix — a marquee (banner,
-    // issue title, elapsed timer, peek hotkeys) fronts the agent, and the window
-    // closes itself when the agent finishes. The whole show is one generated zsh
-    // script (per-fix tmux session + embedded Python marquee), so the injectable
-    // `writeScript` seam still fakes the path in tests. The .command extension is
-    // cosmetic; Ghostty runs it via zsh explicitly.
+    // Cinema mode: one dedicated Ghostty window per fix — splash banner, then the
+    // agent runs live in that window; it closes itself when the agent exits.
+    //
+    // Launch the Ghostty BINARY directly, never via `open -na`: `open` makes the
+    // fresh Ghostty instance create its configured default window (the user's
+    // shell/session-picker) IN ADDITION to our `-e` surface — two tabs per fix.
+    // A direct `ghostty -e …` invocation creates exactly one window running
+    // exactly our command, and --quit-after-last-window-closed ends the instance
+    // with the agent.
     private func launchCinema(_ inv: AgentInvocation) {
         let path = (NSTemporaryDirectory() as NSString)
             .appendingPathComponent("ouroboros-cinema-\(UUID().uuidString).command")
@@ -63,10 +66,18 @@ public struct TerminalLauncher: Sendable {
         } else {
             written = writeScript(inv)   // test seam / degraded fallback: plain agent script
         }
-        // Roomier than the old marquee window: the agent's own TUI lives here now.
-        run(["open", "-na", "Ghostty", "--args",
+        run([ghosttyBinary(),
              "--window-width=110", "--window-height=32", "--title=ouroboros",
+             "--quit-after-last-window-closed=true",
              "-e", "zsh", written])
+    }
+
+    /// The Ghostty executable: the `ghostty` CLI if it's on the user's PATH, else
+    /// the app bundle's binary. (Resolved through `capture`, i.e. a login shell.)
+    func ghosttyBinary() -> String {
+        let cli = capture(["command", "-v", "ghostty"])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cli.isEmpty ? "/Applications/Ghostty.app/Contents/MacOS/ghostty" : cli
     }
 
     private func launchGhosttyTmuxTab(_ inv: AgentInvocation, _ script: String) {
@@ -79,9 +90,11 @@ public struct TerminalLauncher: Sendable {
                  "-c", inv.cwd, runIn])
         }
         // Surface it only when nobody is watching: attach a Ghostty window to the
-        // agents' session. If one is already attached, the new tab appears there.
+        // agents' session. Direct binary, not `open -na` (which adds the instance's
+        // default window — the user's picker — as a second tab).
         if !sessionHasClient() {
-            run(["open", "-na", "Ghostty", "--args", "-e", "tmux", "attach", "-t", sessionName])
+            run([ghosttyBinary(), "--quit-after-last-window-closed=true",
+                 "-e", "tmux", "attach", "-t", sessionName])
         }
     }
 

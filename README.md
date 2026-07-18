@@ -1,53 +1,45 @@
 # Ouroboros
 
-**One pattern, every language.** An in-app "report an issue → hand it straight to a coding
-agent in an isolated git worktree in a new terminal tab" flow. File ten issues, fire ten
-agents, walk away. It feels magical.
+In-app issue capture → coding agent. Your app gets a floating button; anyone using the
+app describes an issue; it's saved as a markdown file in `.issues/`; one click hands it
+to Claude Code or Codex in an isolated git worktree, running live in its own terminal
+window that closes when the agent finishes. File ten issues, fire ten agents, walk away.
 
-This repo holds a self-contained implementation of that pattern **per language**. Point a
-coding agent at this repo, tell it your app's language, and it copies that version's pattern
-into your app.
+## Install it in your app
 
-## How to use this repo (for a coding agent)
+Give your coding agent this prompt:
 
-**Read and follow [`skills/ouroboros-integrate/SKILL.md`](skills/ouroboros-integrate/SKILL.md).**
-It is the single entry point: it detects your app's language, tells you whether to install
-an existing package (Swift) or port the pattern, and walks the full wiring — composer,
-floating button, menu section, issues browser, settings — through to a verification
-checklist. (If your agent runtime supports installable skills, copy that folder into your
-project's `.claude/skills/`; reading the file directly works just as well.)
+```text
+Add Ouroboros to this app.
+Clone https://github.com/SignedAdam/ouroboros (or use an existing checkout),
+read skills/ouroboros-integrate/SKILL.md from that repo, and follow it exactly.
+$OURO = the checkout path.
+```
 
-The per-language folders below hold the implementations the skill installs or references;
-`swift/INTEGRATION.md` has extra Swift-specific detail.
+That skill file is self-contained: it detects your app's language, installs the Swift
+package or ports the pattern, wires the UI (composer, floating button, menu, issues
+browser, settings), applies the mark, and ends with a verification checklist.
+
+Machine requirements for running fixes: `git`, an agent CLI (`claude` / `codex`),
+Ghostty (Terminal.app fallback exists), `gh` only if you use PR-finish.
 
 ## Languages
 
-| Folder | Status | Notes |
-|---|---|---|
-| [`swift/`](swift/) | ✅ Ready | Swift / SwiftUI, macOS. Pure engine (`Ouroboros`) + optional default UI (`OuroborosUI`). 26 unit tests. In production use in Monday. |
-| [`python/`](python/) | ⏳ Planned | A reference implementation exists today in Vaux (`vaux/ouroboros/`); port it here. |
-| [`go/`](go/) | ⏳ Planned | |
-| [`nextjs/`](nextjs/) | ⏳ Planned | |
-| [`react/`](react/) | ⏳ Planned | |
+| Folder | Status |
+|---|---|
+| [`swift/`](swift/) | Ready — SPM package (pure engine + optional UI), full test suite; in production in Monday |
+| [`python/`](python/) | Port pending — reference implementation exists in Vaux |
+| [`go/`](go/) [`nextjs/`](nextjs/) [`react/`](react/) | Port pending — the skill covers porting |
 
-## The pattern (language-agnostic)
+## Repo layout
 
-Five small units, mirrored in every language:
+- `skills/ouroboros-integrate/SKILL.md` — the entry point; everything an agent needs
+- `swift/` — the Swift package: `Ouroboros` (engine, no UI deps) + `OuroborosUI`
+- `brand/` — the mark: geometry spec + reference SVGs
+- `docs/` — design notes
 
-1. **Issue** — model + a local title heuristic (first line → ~9 words) + slug.
-2. **Store** — issues as markdown files under `.issues/<status>/` (status ∈ new/planned/
-   done/cancelled = the folder), with frontmatter metadata (`title`, `created`), listing,
-   body editing, status moves, and dedup. Fixing agents auto-resolve: they append a
-   `## Resolution` section and move the file to `done/`.
-3. **Agent** — build the agent command + a **seed prompt** telling it: this is one issue
-   from an in-app composer; decide if it's actionable, then (in a worktree) implement →
-   verify → merge back or open a PR; else leave it blocked with a note.
-4. **Terminal launcher** — spawn the agent in a new terminal tab (default: a `tmux`
-   window in the active session, i.e. a new Ghostty tab). Pluggable per environment.
-5. **Facade** — `submit(title, body)` → `handToAgent(issue, options)`.
+## The loop
 
-Per-issue options the UI exposes each time: **run in a new worktree?** and **merge into
-base vs. open a PR**.
-
-Keep the units small, pure, and behind injectable runners so they test without spawning
-anything — each language folder does exactly that.
+Composer → `.issues/new/<Title>.md` (frontmatter `title`/`created`; status = folder) →
+seed prompt → agent in a `fix/<slug>` worktree in its own window → the agent appends a
+`## Resolution` section and moves the file to `.issues/done/` when the fix lands.
