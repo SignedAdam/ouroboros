@@ -20,8 +20,9 @@ public struct Ouroboros: Sendable {
     }
 
     @discardableResult
-    public func submit(title: String, body: String) -> Issue? {
-        store.write(title: title, body: body)
+    public func submit(title: String, body: String,
+                       screenshot: IssueScreenshot? = nil) -> Issue? {
+        store.write(title: title, body: body, screenshot: screenshot)
     }
 
     /// Optionally create a worktree, then launch the agent with the seed prompt.

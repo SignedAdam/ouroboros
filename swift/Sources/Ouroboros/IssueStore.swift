@@ -69,12 +69,27 @@ public struct IssueStore: Sendable {
     }
 
     @discardableResult
-    public func write(title: String, body: String) -> Issue? {
+    public func write(title: String, body: String,
+                      screenshot: IssueScreenshot? = nil) -> Issue? {
         let t = IssueText.cleanTitle(title)
-        let b = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        var b = body.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !t.isEmpty, !b.isEmpty, let path = nextPath(t) else { return nil }
         let parent = (path as NSString).deletingLastPathComponent
         try? FileManager.default.createDirectory(atPath: parent, withIntermediateDirectories: true)
+
+        // Screenshot first: the body gains its `## Screenshot` section (absolute
+        // path — the fixing agent may run from a worktree where the live repo's
+        // uncommitted .issues/ files don't exist, so relative paths would dangle).
+        if let screenshot {
+            let slug = IssueText.slugify(t)
+            let d = attachmentsDir()
+            try? FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)
+            if let pngPath = Self.availablePath(in: d, filename: "\(slug).png"),
+               (try? screenshot.pngData.write(to: URL(fileURLWithPath: pngPath))) != nil {
+                b += "\n\n" + Self.screenshotSection(absolutePath: pngPath, screenshot: screenshot)
+            }
+        }
+
         let created = now()
         let content = Self.render(title: t, created: created, body: b)
         do {

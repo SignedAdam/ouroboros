@@ -18,8 +18,13 @@ full test suite.
 1. **Composer** — a modal/popover with: a multi-line markdown *description*; a *title*
    field auto-suggested live from the description (stops overwriting once the user edits
    it); per-issue fix options (**"Run in a new worktree"** toggle, default ON; **"On
-   finish: Merge into base | Open a PR"** choice, default Merge); **Cancel** / **Create
-   Issue** buttons.
+   finish: Merge into base | Open a PR"** choice, default Merge); an **"Include
+   screenshot"** checkbox (capture the app window at composer-OPEN time, before the
+   modal renders, so the modal is never in frame — checked → show the preview
+   immediately with an edit invitation: high-contrast pen strokes by dragging,
+   double-click to place text; burn annotations into the PNG, keep the note texts
+   separately, and pass `IssueScreenshot(pngData:textNotes:hasPenMarks:)` to
+   `submit`); **Cancel** / **Create Issue** buttons.
 2. **Confirm step** — after Create: show the saved file path, then offer the fix per the
    *harness rule* below ("Fix it" / "Fix with X" buttons + "Not now").
 3. **Floating button** — a small, always-visible in-app button (bottom-right corner over
