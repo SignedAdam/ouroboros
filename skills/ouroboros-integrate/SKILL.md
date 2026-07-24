@@ -24,7 +24,13 @@ full test suite.
    immediately with an edit invitation: high-contrast pen strokes by dragging,
    double-click to place text; burn annotations into the PNG, keep the note texts
    separately, and pass `IssueScreenshot(pngData:textNotes:hasPenMarks:)` to
-   `submit`); **Cancel** / **Create Issue** buttons.
+   `submit`. Swift apps: don't build this — `OuroborosUI` ships the whole kit:
+   `ScreenshotAnnotator.captureAppWindow()` (pre-modal capture),
+   `AnnotatableScreenshotView(image:markup:editable:accent:border:)` (preview +
+   editor), `ScreenshotAnnotator.composite(base:markup:accent:)` (burn-in), and
+   `ScreenshotMarkup`/`ScreenshotNote`. Other languages: port from
+   `$OURO/swift/Sources/OuroborosUI/ScreenshotAnnotation.swift`);
+   **Cancel** / **Create Issue** buttons.
 2. **Confirm step** — after Create: show the saved file path, then offer the fix per the
    *harness rule* below ("Fix it" / "Fix with X" buttons + "Not now").
 3. **Floating button** — a small, always-visible in-app button (bottom-right corner over
