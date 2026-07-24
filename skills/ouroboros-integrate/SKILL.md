@@ -116,10 +116,12 @@ green before you write a line of app code. Then confirm the host repo's `.gitign
 covers `Packages/Ouroboros/.build/` (running the tests just recreated it); add a rule if
 not, and commit the vendored copy.
 
-The package also ships an **`OuroborosUI`** target (a plain default composer +
-`MenuBarExtra` entry). Use it ONLY when the host app has no design system of its own;
-an app with established components ignores `OuroborosUI` entirely and builds its own
-surfaces against the engine (per Phase 3's styling rule). Don't link it "just in case."
+The package also ships an **`OuroborosUI`** target. Every app links it for the
+canonical `OuroborosMark` and the screenshot kit (capture / annotate / composite —
+see the composer item above). Its *default composer + `MenuBarExtra` entry* are a
+different matter: use those ONLY when the host app has no design system of its own;
+an app with established components builds its own composer against the engine
+(per Phase 3's styling rule).
 
 ### Python — port exists in spirit
 
