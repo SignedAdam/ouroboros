@@ -352,6 +352,8 @@ struct QuickCaptureView: View {
                 SlashPalette(matches: matches, selection: selection)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 10)
+            } else {
+                recents
             }
 
             Divider().opacity(0.5)
@@ -423,6 +425,79 @@ struct QuickCaptureView: View {
         .sheet(item: $slash.wizard) { request in
             ProjectWizardSheet(request: request, model: model, onClose: { slash.wizard = nil })
         }
+    }
+
+    // MARK: - recents
+
+    /// Two lists, because "recent" means two different things. The first is what
+    /// you have pointed Ouroboros at. The second is what you have been committing
+    /// to, which is how a repo you have never filed against still shows up the
+    /// moment it becomes the thing you are working on.
+    private var recents: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                withAnimation(.easeOut(duration: 0.12)) { model.recentsExpanded.toggle() }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .bold))
+                        .rotationEffect(.degrees(model.recentsExpanded ? 90 : 0))
+                    Text("RECENT PROJECTS")
+                        .font(.system(size: 9, weight: .semibold))
+                        .kerning(0.8)
+                    Spacer()
+                }
+                .foregroundStyle(.tertiary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 18)
+            .padding(.bottom, model.recentsExpanded ? 6 : 12)
+
+            if model.recentsExpanded {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(model.recentUsed) { projectRow($0) }
+
+                    if !model.recentByGit.isEmpty {
+                        Text("by git activity")
+                            .font(.system(size: 9))
+                            .foregroundStyle(.quaternary)
+                            .padding(.horizontal, 18)
+                            .padding(.top, model.recentUsed.isEmpty ? 0 : 6)
+                            .padding(.bottom, 2)
+                        ForEach(model.recentByGit) { projectRow($0) }
+                    }
+
+                    if model.recentUsed.isEmpty && model.recentByGit.isEmpty {
+                        Text("nothing yet. /add a directory")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 18)
+                    }
+                }
+                .padding(.bottom, 10)
+            }
+        }
+    }
+
+    private func projectRow(_ project: Project) -> some View {
+        let selected = project.id == model.selectedProject?.id
+        return Button {
+            model.selectedProjectId = project.id
+        } label: {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(selected ? ouroOrange : Color.secondary.opacity(0.3))
+                    .frame(width: 5, height: 5)
+                Text(project.name)
+                    .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                Spacer()
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func submit(fix: Bool) {

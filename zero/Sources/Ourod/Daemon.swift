@@ -770,12 +770,16 @@ final class Daemon: @unchecked Sendable {
 
     func snapshot() -> API.Snapshot {
         let all = runs.all()
+        let used = registry.recentlyUsed(limit: 5)
         return API.Snapshot(
             health: health(),
             projects: registry.all(),
             inbox: inbox(),
             activeRuns: all.filter { $0.status.isActive },
-            recentRuns: Array(all.filter { $0.status.isTerminal }.prefix(12)))
+            recentRuns: Array(all.filter { $0.status.isTerminal }.prefix(12)),
+            recentUsed: used,
+            recentByGit: registry.recentlyTouchedByGit(
+                limit: 5, excluding: Set(used.map(\.id))))
     }
 
     private func eventStream() -> HTTPResponse {

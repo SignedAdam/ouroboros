@@ -1,0 +1,14 @@
+#!/opt/homebrew/bin/python3.11
+"""Type text via Quartz unicode payload. Layout independent."""
+import sys, time, Quartz
+if len(sys.argv) < 2:
+    sys.exit('usage: type-text "<text>" [wpm]')
+text = sys.argv[1]
+wpm = int(sys.argv[2]) if len(sys.argv) > 2 else 520
+delay = 60.0 / (wpm * 5)
+for ch in text:
+    for down in (True, False):
+        ev = Quartz.CGEventCreateKeyboardEvent(None, 0, down)
+        Quartz.CGEventKeyboardSetUnicodeString(ev, len(ch), ch)
+        Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
+    time.sleep(delay)

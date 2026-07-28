@@ -1,0 +1,5 @@
+#!/bin/zsh
+# Brings an app to the front. This CHANGES what is on screen; re-assert after.
+set -e
+[[ -n "$1" ]] || { print -u2 "usage: focus-app <app name>"; exit 2 }
+osascript -e "tell application \"$1\" to activate"

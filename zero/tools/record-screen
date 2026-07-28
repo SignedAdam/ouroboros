@@ -1,0 +1,10 @@
+#!/bin/zsh
+# Record a screen region to mp4. Region defaults to the built-in display.
+set -e
+SECS="${1:?usage: ouro-rec <seconds> [x,y,w,h] <out.mp4>}"
+if [[ $# -ge 3 ]]; then REGION="$2"; OUT="$3"; else REGION="0,0,1496,967"; OUT="$2"; fi
+TMP="${TMPDIR:-/tmp}/ouro-rec-$$.mov"
+screencapture -v -R "$REGION" -V "$SECS" "$TMP"
+ffmpeg -loglevel error -i "$TMP" -vcodec h264 -pix_fmt yuv420p -movflags +faststart -y "$OUT"
+rm -f "$TMP"
+print "$OUT"

@@ -220,7 +220,8 @@ public final class Supervisor: @unchecked Sendable {
                 verifyCmd: project.verifyCmd,
                 resultPath: runs.resultPath(run.id),
                 protectedPaths: project.policy.protectedPaths,
-                extraContext: run.note))
+                extraContext: run.note,
+                toolsPath: installedToolsPath()))
         } else {
             prompt = SupervisedPrompt.fix(SupervisedPrompt.Context(
                 title: run.title,
@@ -230,7 +231,8 @@ public final class Supervisor: @unchecked Sendable {
                 worktree: run.worktreePath != nil,
                 verifyCmd: project.verifyCmd,
                 resultPath: runs.resultPath(run.id),
-                protectedPaths: project.policy.protectedPaths))
+                protectedPaths: project.policy.protectedPaths,
+                toolsPath: installedToolsPath()))
         }
         try? FileManager.default.createDirectory(atPath: runs.dir(run.id),
                                                  withIntermediateDirectories: true)
@@ -251,6 +253,15 @@ public final class Supervisor: @unchecked Sendable {
         let invocation = AgentInvocation(argv: argv, cwd: run.cwd, label: run.id, title: run.title)
         launcher().launch(invocation)
         publish("run.started", run)
+    }
+
+    /// Only mention the toolbelt to agents when it is actually installed —
+    /// a prompt that advertises tools the machine does not have is worse than
+    /// one that says nothing.
+    func installedToolsPath() -> String? {
+        let path = (home as NSString).appendingPathComponent("tools")
+        let spec = (path as NSString).appendingPathComponent("TOOLS.md")
+        return FileManager.default.fileExists(atPath: spec) ? path : nil
     }
 
     private func launcher() -> TerminalLauncher {

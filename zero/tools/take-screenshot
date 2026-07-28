@@ -1,0 +1,16 @@
+#!/bin/zsh
+# Screenshot. Default is the built-in display, which is almost always what you want.
+set -e
+OUT=""; ARGS=(-x)
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --display) ARGS+=(-D "$2"); shift 2 ;;
+    --region)  ARGS+=(-R "$2"); shift 2 ;;
+    --window)  ARGS+=(-l "$2"); shift 2 ;;
+    *) OUT="$1"; shift ;;
+  esac
+done
+[[ -n "$OUT" ]] || { print -u2 "usage: ouro-shot [--display N|--region x,y,w,h|--window id] out.png"; exit 2 }
+[[ "${ARGS[*]}" == *-D* || "${ARGS[*]}" == *-R* || "${ARGS[*]}" == *-l* ]] || ARGS+=(-D 1)
+screencapture "${ARGS[@]}" "$OUT"
+print "$OUT"

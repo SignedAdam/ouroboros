@@ -18,6 +18,10 @@ test:
 ## ouro + ourod onto PATH. The two binaries must land in the SAME directory:
 ## the daemon finds the shim as its sibling, which is what makes runs work when
 ## the whole thing was launched from Finder with no shell PATH.
+## The toolbelt ships with the product rather than beside it: every dispatched
+## agent gets these on PATH, so "fix the button" can be verified by looking at
+## the button instead of at the diff.
+##
 ## `rm` before `cp`, never `cp -f`. Overwriting a code-signed Mach-O in place
 ## invalidates its signature and macOS SIGKILLs it on the next exec — which
 ## shows up as agents that launch and vanish with an empty log, not as anything
@@ -27,6 +31,10 @@ install: build app
 	rm -f "$(BIN)/ouro" "$(BIN)/ourod"
 	cp "$(BUILD)/ouro"  "$(BIN)/ouro"
 	cp "$(BUILD)/ourod" "$(BIN)/ourod"
+	rm -rf "$(HOME)/.ouroboros/tools"
+	mkdir -p "$(HOME)/.ouroboros/tools"
+	cp tools/* "$(HOME)/.ouroboros/tools/"
+	find "$(HOME)/.ouroboros/tools" -type f ! -name '*.md' -exec chmod +x {} +
 	@echo ""
 	@echo "  installed: $(BIN)/ouro  $(BIN)/ourod"
 	@echo "  app:       $(APP)"

@@ -1,0 +1,41 @@
+#!/opt/homebrew/bin/python3.11
+"""What is on screen right now. No screenshot, ~40ms."""
+import sys, Quartz
+
+def windows():
+    raw = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly | Quartz.kCGWindowListExcludeDesktopElements,
+        Quartz.kCGNullWindowID)
+    out = []
+    for w in raw:
+        if w.get("kCGWindowLayer", 0) != 0:       # menu bar, dock, overlays
+            continue
+        b = w.get("kCGWindowBounds", {})
+        if b.get("Height", 0) < 40:               # slivers are not windows
+            continue
+        out.append((w.get("kCGWindowOwnerName", "?"), int(b.get("X", 0)), int(b.get("Y", 0)),
+                    int(b.get("Width", 0)), int(b.get("Height", 0))))
+    return out
+
+args = sys.argv[1:]
+allowed, display = set(), None
+while args:
+    a = args.pop(0)
+    if a == "--assert": allowed = set(args); args = []
+    elif a == "--display": display = int(args.pop(0))
+
+found = windows()
+if display is not None:
+    err, ids, cnt = Quartz.CGGetActiveDisplayList(8, None, None)
+    b = Quartz.CGDisplayBounds(ids[display - 1])
+    x0, y0, x1, y1 = b.origin.x, b.origin.y, b.origin.x + b.size.width, b.origin.y + b.size.height
+    found = [f for f in found if x0 <= f[1] < x1 and y0 <= f[2] < y1]
+
+for owner, x, y, w, h in found:
+    print(f"{owner}\t{x},{y} {w}x{h}")
+if allowed:
+    strays = {o for o, *_ in found} - allowed
+    if strays:
+        print("STRAY: " + ", ".join(sorted(strays)), file=sys.stderr)
+        sys.exit(1)
+    print("CLEAN")

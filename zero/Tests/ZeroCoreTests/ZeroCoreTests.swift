@@ -83,6 +83,43 @@ final class RegistryTests: XCTestCase {
                        "the one you actually used leads")
     }
 
+    func testRecentListsDoNotOverlap() {
+        let dir = tempDir("recents")
+        let file = (dir as NSString).appendingPathComponent("projects.json")
+        let registry = Registry(file: file)
+        let git = ["alpha", "beta", "gamma"]
+        for name in git {
+            let path = (dir as NSString).appendingPathComponent(name)
+            try? FileManager.default.createDirectory(
+                atPath: (path as NSString).appendingPathComponent(".git"),
+                withIntermediateDirectories: true)
+            FileManager.default.createFile(
+                atPath: ((path as NSString).appendingPathComponent(".git") as NSString)
+                    .appendingPathComponent("logs/HEAD"),
+                contents: Data("x".utf8))
+            registry.register(path: path)
+        }
+        registry.touch("alpha")
+
+        let used = registry.recentlyUsed(limit: 5)
+        let byGit = registry.recentlyTouchedByGit(limit: 5, excluding: Set(used.map(\.id)))
+        XCTAssertEqual(used.map(\.name), ["alpha"])
+        XCTAssertFalse(byGit.contains { $0.id == "alpha" },
+                       "a project must never appear in both lists")
+        XCTAssertEqual(Set(byGit.map(\.name)), ["beta", "gamma"])
+    }
+
+    func testGitActivityFallsBackWhenLogsAreMissing() {
+        let dir = tempDir("nogitlogs")
+        let repo = (dir as NSString).appendingPathComponent("repo")
+        try? FileManager.default.createDirectory(
+            atPath: (repo as NSString).appendingPathComponent(".git"),
+            withIntermediateDirectories: true)
+        // A fresh clone has no logs/HEAD yet; the repo still exists and must rank.
+        XCTAssertNotNil(Registry.gitActivity(at: repo))
+        XCTAssertNil(Registry.gitActivity(at: tempDir("notarepo")))
+    }
+
     func testGuessVerifyCommand() {
         let dir = tempDir("guess")
         FileManager.default.createFile(

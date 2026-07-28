@@ -1,0 +1,18 @@
+#!/opt/homebrew/bin/python3.11
+"""Send a keystroke via Quartz. NOT System Events, which leaks modifiers."""
+import sys, time, Quartz
+MODS = {"cmd": Quartz.kCGEventFlagMaskCommand, "opt": Quartz.kCGEventFlagMaskAlternate,
+        "alt": Quartz.kCGEventFlagMaskAlternate, "ctrl": Quartz.kCGEventFlagMaskControl,
+        "shift": Quartz.kCGEventFlagMaskShift}
+if len(sys.argv) < 2 or not sys.argv[1].isdigit():
+    sys.exit("usage: press-key <keycode> [cmd] [opt] [ctrl] [shift]\n"
+             "       space 49  return 36  escape 53  tab 48  delete 51  arrows 123-126")
+code, mods = int(sys.argv[1]), sys.argv[2:]
+flags = 0
+for m in mods: flags |= MODS.get(m, 0)
+for down in (True, False):
+    ev = Quartz.CGEventCreateKeyboardEvent(None, code, down)
+    Quartz.CGEventSetFlags(ev, flags)
+    Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
+    time.sleep(0.012)
+time.sleep(0.05)   # let modifier state settle or the next key arrives as a chord

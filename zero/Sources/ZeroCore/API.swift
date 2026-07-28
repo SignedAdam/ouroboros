@@ -300,10 +300,18 @@ public enum API {
         public var inbox: [InboxItem]
         public var activeRuns: [Run]
         public var recentRuns: [Run]
+        /// Projects you have pointed Ouroboros at, newest first.
+        public var recentUsed: [Project]
+        /// Projects you have been committing to, newest first, with anything
+        /// already in `recentUsed` removed so the two lists never repeat.
+        public var recentByGit: [Project]
+
         public init(health: HealthDTO, projects: [Project], inbox: [InboxItem],
-                    activeRuns: [Run], recentRuns: [Run]) {
+                    activeRuns: [Run], recentRuns: [Run],
+                    recentUsed: [Project] = [], recentByGit: [Project] = []) {
             self.health = health; self.projects = projects; self.inbox = inbox
             self.activeRuns = activeRuns; self.recentRuns = recentRuns
+            self.recentUsed = recentUsed; self.recentByGit = recentByGit
         }
     }
 }

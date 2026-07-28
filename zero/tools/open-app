@@ -1,0 +1,6 @@
+#!/bin/zsh
+# Opens without stealing focus. Activating an app makes macOS follow it to ITS Space,
+# which silently changes what is on screen.
+set -e
+[[ -n "$1" ]] || { print -u2 "usage: open-app <app name>"; exit 2 }
+open -g -a "$1"

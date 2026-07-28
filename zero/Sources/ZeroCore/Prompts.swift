@@ -22,10 +22,14 @@ public enum SupervisedPrompt {
         public var resultPath: String
         public var protectedPaths: [String]
         public var extraContext: String?
+        /// Path to the installed toolbelt, when there is one.
+        public var toolsPath: String?
 
         public init(title: String, body: String, issuePath: String? = nil, branch: String,
                     base: String, worktree: Bool, verifyCmd: String? = nil, resultPath: String,
-                    protectedPaths: [String] = [], extraContext: String? = nil) {
+                    protectedPaths: [String] = [], extraContext: String? = nil,
+                    toolsPath: String? = nil) {
+            self.toolsPath = toolsPath
             self.title = title
             self.body = body
             self.issuePath = issuePath
@@ -57,6 +61,27 @@ public enum SupervisedPrompt {
         }
         if let extra = ctx.extraContext, !extra.isEmpty {
             out += "\n\(extra)\n"
+        }
+
+        if let tools = ctx.toolsPath {
+            out += """
+
+            You have a toolbelt on PATH. `\(tools)/TOOLS.md` is its complete spec, one
+            line per tool, and it is the only thing you need to read to use them:
+
+              list-windows      what is actually on screen right now (assertable)
+              take-screenshot   save a screenshot of a display, region or window
+              record-screen     record a region to mp4
+              press-key         send a keystroke      type-text   type text
+              open-app          open an app without bringing it to the front
+              focus-app         bring an app to the front     quit-app   quit it
+              ouro              the Ouroboros CLI (`ouro idea "…"` parks a thought)
+
+            If this issue touches anything with a UI, a diff does not prove the fix.
+            Open it, assert with `list-windows --assert` that what you think is on
+            screen really is, screenshot it, and look. Drive only your own app.
+
+            """
         }
 
         out += ctx.worktree

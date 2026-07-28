@@ -85,6 +85,14 @@ enum Shim {
         env["OUROBOROS_HOME"] = home
         env["OUROBOROS_RUN_ID"] = runId
         env["OUROBOROS_RESULT_FILE"] = (runDir as NSString).appendingPathComponent("result.json")
+        // The toolbelt goes on PATH ahead of everything else, and its spec goes in
+        // an env var, so an agent can verify a UI change by looking at the UI
+        // instead of inferring it from a diff.
+        let tools = (home as NSString).appendingPathComponent("tools")
+        if FileManager.default.fileExists(atPath: tools) {
+            env["PATH"] = tools + ":" + (env["PATH"] ?? "/usr/bin:/bin")
+            env["OUROBOROS_TOOLS"] = tools
+        }
         process.environment = env
 
         var forwarded: [DispatchSourceSignal] = []

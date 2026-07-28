@@ -1,0 +1,5 @@
+#!/bin/zsh
+# Quits an app by name.
+set -e
+[[ -n "$1" ]] || { print -u2 "usage: quit-app <app name>"; exit 2 }
+osascript -e "tell application \"$1\" to quit"

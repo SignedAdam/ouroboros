@@ -134,6 +134,46 @@ public final class Registry: @unchecked Sendable {
         return upsert(project)
     }
 
+    // MARK: - recency
+
+    /// When this repo last saw git activity.
+    ///
+    /// Deliberately a `stat`, not `git log -1`. With ~60 registered projects the
+    /// subprocess version costs a second or two and the capture panel has to
+    /// open instantly. `.git/logs/HEAD` is touched by every commit, checkout,
+    /// merge and rebase, so its mtime is the same signal for one syscall.
+    public static func gitActivity(at path: String) -> Date? {
+        let fm = FileManager.default
+        let git = (path as NSString).appendingPathComponent(".git")
+        for candidate in ["logs/HEAD", "HEAD", ""] {
+            let full = candidate.isEmpty ? git : (git as NSString).appendingPathComponent(candidate)
+            if let date = (try? fm.attributesOfItem(atPath: full))?[.modificationDate] as? Date {
+                return date
+            }
+        }
+        return nil
+    }
+
+    /// Projects you have actually pointed Ouroboros at, most recent first.
+    public func recentlyUsed(limit: Int = 5) -> [Project] {
+        Array(all().filter { $0.lastUsed != nil }.prefix(limit))
+    }
+
+    /// Projects you have been *working in*, whether or not Ouroboros knows about
+    /// it yet. This is the half that makes the panel feel like it is paying
+    /// attention: the repo you committed to an hour ago is right there.
+    public func recentlyTouchedByGit(limit: Int = 5, excluding: Set<String> = []) -> [Project] {
+        all()
+            .filter { !excluding.contains($0.id) }
+            .compactMap { project -> (Project, Date)? in
+                guard let date = Registry.gitActivity(at: project.path) else { return nil }
+                return (project, date)
+            }
+            .sorted { $0.1 > $1.1 }
+            .prefix(limit)
+            .map(\.0)
+    }
+
     /// Scan a parent directory (e.g. `~/dev`) for git repos, one level deep.
     public static func discover(in parent: String, limit: Int = 400) -> [String] {
         let fm = FileManager.default

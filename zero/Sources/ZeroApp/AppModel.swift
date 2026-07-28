@@ -19,6 +19,21 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
 
     var projects: [Project] { snapshot?.projects ?? [] }
+    var recentUsed: [Project] { snapshot?.recentUsed ?? [] }
+    var recentByGit: [Project] { snapshot?.recentByGit ?? [] }
+
+    /// Fold state for the capture panel's recents section. A UI preference, so
+    /// it lives in UserDefaults rather than config.json, which is the daemon's
+    /// contract with every client.
+    var recentsExpanded: Bool {
+        get {
+            UserDefaults.standard.object(forKey: "recentsExpanded") as? Bool ?? true
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "recentsExpanded")
+            objectWillChange.send()
+        }
+    }
     var inbox: [InboxItem] { snapshot?.inbox ?? [] }
     var activeRuns: [Run] { snapshot?.activeRuns ?? [] }
     var recentRuns: [Run] { snapshot?.recentRuns ?? [] }
