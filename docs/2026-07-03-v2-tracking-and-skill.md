@@ -1,6 +1,6 @@
 # Ouroboros v2 — issue tracking + the integration skill
 
-**Status:** approved direction from Adam (2026-07-03); design locked by Claude per delegation.
+**Status:** approved direction (2026-07-03); design locked by Claude per delegation.
 
 ## Goals
 
@@ -28,7 +28,7 @@ created: 2026-07-03T02:55:12Z
 body markdown…
 ```
 
-- **Status = folder**, matching the existing convention (Vaux + Monday):
+- **Status = folder**, matching the existing convention (Lantern + Atlas):
   `.issues/new/`, `.issues/planned/`, `.issues/done/`, `.issues/cancelled/`.
   New issues are written to `new/`. Changing status moves the file.
 - **Frontmatter** carries `title` and `created` (ISO-8601 UTC). Parsers MUST tolerate

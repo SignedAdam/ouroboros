@@ -27,8 +27,8 @@ Ghostty (Terminal.app fallback exists), `gh` only if you use PR-finish.
 
 | Folder | Status |
 |---|---|
-| [`swift/`](swift/) | Ready — SPM package (pure engine + optional UI), full test suite; in production in Monday |
-| [`python/`](python/) | Port pending — reference implementation exists in Vaux |
+| [`swift/`](swift/) | Ready — SPM package (pure engine + optional UI), full test suite; in production in Atlas |
+| [`python/`](python/) | Port pending — reference implementation exists in Lantern |
 | [`go/`](go/) [`nextjs/`](nextjs/) [`react/`](react/) | Port pending — the skill covers porting |
 
 ## Repo layout
