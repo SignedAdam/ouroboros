@@ -57,11 +57,18 @@ public struct Project: Codable, Sendable, Equatable, Identifiable {
     public var policy: Policy
     public var createdAt: Date
     public var lastUsed: Date?
+    /// Pinned to the top of the capture panel, however long ago you touched it.
+    public var favourite: Bool
+    /// Dropped from the panel until Ouroboros is used here again. Cleared by
+    /// `Registry.touch` — filing an issue or dispatching a run un-hides a
+    /// project, committing to it does not.
+    public var hidden: Bool
 
     public init(id: String, name: String, path: String, baseBranch: String? = nil,
                 defaultAgent: String? = nil, verifyCmd: String? = nil,
                 roadmapPath: String? = nil, policy: Policy = Policy(),
-                createdAt: Date = Date(), lastUsed: Date? = nil) {
+                createdAt: Date = Date(), lastUsed: Date? = nil,
+                favourite: Bool = false, hidden: Bool = false) {
         self.id = id
         self.name = name
         self.path = path
@@ -72,6 +79,28 @@ public struct Project: Codable, Sendable, Equatable, Identifiable {
         self.policy = policy
         self.createdAt = createdAt
         self.lastUsed = lastUsed
+        self.favourite = favourite
+        self.hidden = hidden
+    }
+
+    /// Hand-written for the same reason `Config`'s is: synthesised decoding
+    /// requires every non-optional key to be present, so adding a field would
+    /// make every `projects.json` written before it fail to decode — and a
+    /// registry that fails to decode is a registry that silently becomes empty.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        path = try c.decode(String.self, forKey: .path)
+        baseBranch = try c.decodeIfPresent(String.self, forKey: .baseBranch)
+        defaultAgent = try c.decodeIfPresent(String.self, forKey: .defaultAgent)
+        verifyCmd = try c.decodeIfPresent(String.self, forKey: .verifyCmd)
+        roadmapPath = try c.decodeIfPresent(String.self, forKey: .roadmapPath)
+        policy = try c.decodeIfPresent(Policy.self, forKey: .policy) ?? Policy()
+        createdAt = try c.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        lastUsed = try c.decodeIfPresent(Date.self, forKey: .lastUsed)
+        favourite = try c.decodeIfPresent(Bool.self, forKey: .favourite) ?? false
+        hidden = try c.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
     }
 }
 
@@ -173,6 +202,10 @@ public struct Run: Codable, Sendable, Equatable, Identifiable {
     /// Inbox dismissal. Terminal runs stay on disk; this hides them from the queue.
     public var acknowledged: Bool
     public var prompt: String?
+    /// The harness's own conversation id, so the thinking behind a fix can be
+    /// reopened instead of re-read. Set at dispatch for harnesses that accept
+    /// one, discovered at exit for the ones that don't.
+    public var sessionId: String?
 
     public init(id: String, projectId: String, projectName: String, kind: RunKind,
                 agent: String, title: String, issuePath: String? = nil, cwd: String,
@@ -181,7 +214,8 @@ public struct Run: Codable, Sendable, Equatable, Identifiable {
                 startedAt: Date? = nil, endedAt: Date? = nil, pid: Int32? = nil,
                 exitCode: Int32? = nil, verify: VerifyOutcome? = nil,
                 result: AgentResult? = nil, note: String? = nil, mergedInto: String? = nil,
-                mergeCommit: String? = nil, acknowledged: Bool = false, prompt: String? = nil) {
+                mergeCommit: String? = nil, acknowledged: Bool = false, prompt: String? = nil,
+                sessionId: String? = nil) {
         self.id = id
         self.projectId = projectId
         self.projectName = projectName
@@ -207,6 +241,7 @@ public struct Run: Codable, Sendable, Equatable, Identifiable {
         self.mergeCommit = mergeCommit
         self.acknowledged = acknowledged
         self.prompt = prompt
+        self.sessionId = sessionId
     }
 
     public var duration: TimeInterval? {

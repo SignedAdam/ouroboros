@@ -99,6 +99,10 @@ public final class Registry: @unchecked Sendable {
         lock.lock()
         if let idx = projects.firstIndex(where: { $0.id == id }) {
             projects[idx].lastUsed = Date()
+            // "Hide until it is active again" — and this is what active means.
+            // Using Ouroboros here brings a project back; committing to it does
+            // not, or hiding would never survive a working afternoon.
+            projects[idx].hidden = false
         }
         let snapshot = projects
         lock.unlock()
