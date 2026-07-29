@@ -397,6 +397,45 @@ final class PathsTests: XCTestCase {
     }
 }
 
+// MARK: - Config
+
+final class ConfigTests: XCTestCase {
+    func testOlderConfigsKeepTheirSettings() throws {
+        // The regression that cost an evening: adding `hotkey` to the struct made
+        // every existing config.json fail to decode, and load() wrote defaults
+        // over the top. The user's `-p` flag vanished and every dispatched agent
+        // launched an interactive TUI and hung.
+        let json = """
+        {"maxParallel": 7, "defaultAgent": "codex", "terminal": "tmux",
+         "agents": {"claude": ["claude", "-p", "{prompt}"]},
+         "projectsRoot": "~/code"}
+        """
+        let config = try XCTUnwrap(Zero.decode(Config.self, from: Data(json.utf8)))
+        XCTAssertEqual(config.agents["claude"], ["claude", "-p", "{prompt}"])
+        XCTAssertEqual(config.maxParallel, 7)
+        XCTAssertEqual(config.defaultAgent, "codex")
+        XCTAssertEqual(config.projectsRoot, "~/code")
+        XCTAssertEqual(config.hotkey, "opt+space", "a missing field takes its default")
+        XCTAssertNil(config.repoPath)
+    }
+
+    func testEmptyObjectDecodesToDefaults() throws {
+        let config = try XCTUnwrap(Zero.decode(Config.self, from: Data("{}".utf8)))
+        XCTAssertEqual(config.hotkey, Config().hotkey)
+        XCTAssertEqual(config.agents, Config.defaultAgents)
+    }
+
+    func testDefaultAgentsAreNonInteractive() {
+        // A supervised agent gets /dev/null on stdin. Any harness that would open
+        // an interactive session here hangs forever with an empty log.
+        for (name, argv) in Config.defaultAgents {
+            XCTAssertGreaterThan(argv.count, 2,
+                                 "\(name) needs a non-interactive flag, not just a prompt")
+            XCTAssertTrue(argv.contains("{prompt}"), "\(name) must take the prompt")
+        }
+    }
+}
+
 // MARK: - Merge safety
 
 final class GitMergeSafetyTests: XCTestCase {

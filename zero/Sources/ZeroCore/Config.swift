@@ -70,15 +70,55 @@ public struct Config: Codable, Sendable {
     /// choice, so it lives in `~/.ouroboros/config.json`, not in this default:
     ///
     ///     "agents": { "claude": ["claude", "<your-flags>", "{prompt}"] }
+    ///
+    /// The non-interactive flags below are NOT about permissions — they are about
+    /// interactivity. A supervised run has no terminal to type into and gets
+    /// /dev/null on stdin, so a harness that starts its interactive TUI reads EOF
+    /// and hangs forever with an empty log. Print mode is the only shape that can
+    /// work here, and getting this wrong costs an evening before anyone notices,
+    /// because a hung run looks exactly like a slow one.
     public static let defaultAgents: [String: [String]] = [
-        "claude": ["claude", "{prompt}"],
-        "codex":  ["codex", "{prompt}"],
-        "gemini": ["gemini", "{prompt}"],
-        "pi":     ["pi", "{prompt}"],
+        "claude": ["claude", "-p", "{prompt}"],
+        "codex":  ["codex", "exec", "{prompt}"],
+        "gemini": ["gemini", "-p", "{prompt}"],
+        "pi":     ["pi", "-p", "{prompt}"],
     ]
+
+    /// Every field is optional on the way in, defaulted on the way out.
+    ///
+    /// Synthesised decoding requires each non-optional key to be present, so
+    /// simply ADDING a field to this struct would make every existing
+    /// config.json fail to decode. Combined with the old `load()` — which wrote
+    /// defaults over anything it could not read — shipping a new setting silently
+    /// erased the user's settings. It ate a `-p` flag and cost an evening: every
+    /// dispatched agent launched an interactive TUI and hung forever.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = Config()
+        maxParallel = try c.decodeIfPresent(Int.self, forKey: .maxParallel) ?? d.maxParallel
+        defaultAgent = try c.decodeIfPresent(String.self, forKey: .defaultAgent) ?? d.defaultAgent
+        terminal = try c.decodeIfPresent(String.self, forKey: .terminal) ?? d.terminal
+        discordWebhook = try c.decodeIfPresent(String.self, forKey: .discordWebhook)
+        notifyOn = try c.decodeIfPresent([String].self, forKey: .notifyOn) ?? d.notifyOn
+        notifyMacOS = try c.decodeIfPresent(Bool.self, forKey: .notifyMacOS) ?? d.notifyMacOS
+        agents = try c.decodeIfPresent([String: [String]].self, forKey: .agents) ?? d.agents
+        httpPort = try c.decodeIfPresent(Int.self, forKey: .httpPort)
+        token = try c.decodeIfPresent(String.self, forKey: .token)
+        projectsRoot = try c.decodeIfPresent(String.self, forKey: .projectsRoot) ?? d.projectsRoot
+        autoDiscoverRoots = try c.decodeIfPresent([String].self, forKey: .autoDiscoverRoots) ?? d.autoDiscoverRoots
+        hotkey = try c.decodeIfPresent(String.self, forKey: .hotkey) ?? d.hotkey
+        repoPath = try c.decodeIfPresent(String.self, forKey: .repoPath)
+    }
 
     public static func load() -> Config {
         if let c = Zero.readJSON(Config.self, from: Paths.configFile) { return c }
+        // Unreadable, but it exists — that is a file with something in it, and
+        // something in it beats defaults. Keep a copy before writing anything.
+        if FileManager.default.fileExists(atPath: Paths.configFile) {
+            let backup = Paths.configFile + ".broken"
+            try? FileManager.default.removeItem(atPath: backup)
+            try? FileManager.default.copyItem(atPath: Paths.configFile, toPath: backup)
+        }
         let fresh = Config()
         Zero.writeJSON(fresh, to: Paths.configFile)
         return fresh
