@@ -28,14 +28,37 @@ public enum API {
         public var worktreeDefault: Bool?
         public var finishDefault: String?
         public var protectedPaths: [String]?
+        /// Pin to the top of the capture panel.
+        public var favourite: Bool?
+        /// Drop out of the capture panel until Ouroboros is used here again.
+        public var hidden: Bool?
         public init(name: String? = nil, baseBranch: String? = nil, verifyCmd: String? = nil,
                     defaultAgent: String? = nil, autonomy: String? = nil, maxParallel: Int? = nil,
                     worktreeDefault: Bool? = nil, finishDefault: String? = nil,
-                    protectedPaths: [String]? = nil) {
+                    protectedPaths: [String]? = nil, favourite: Bool? = nil, hidden: Bool? = nil) {
             self.name = name; self.baseBranch = baseBranch; self.verifyCmd = verifyCmd
             self.defaultAgent = defaultAgent; self.autonomy = autonomy; self.maxParallel = maxParallel
             self.worktreeDefault = worktreeDefault; self.finishDefault = finishDefault
             self.protectedPaths = protectedPaths
+            self.favourite = favourite; self.hidden = hidden
+        }
+    }
+
+    /// What a resume produced: the command that ran, and where it ran.
+    public struct Resumed: Codable, Sendable {
+        public var runId: String
+        public var command: String
+        public var cwd: String
+        public init(runId: String, command: String, cwd: String) {
+            self.runId = runId; self.command = command; self.cwd = cwd
+        }
+    }
+
+    public struct AgentList: Codable, Sendable {
+        public var agents: [AgentInfo]
+        public var defaultAgent: String
+        public init(agents: [AgentInfo], defaultAgent: String) {
+            self.agents = agents; self.defaultAgent = defaultAgent
         }
     }
 
@@ -329,13 +352,17 @@ public enum API {
         /// pointed Ouroboros at, then the ones you have been committing to.
         public var recents: [ProjectDigest]
         public var stats: Stats
+        /// The harnesses this machine can dispatch to, so the panel can offer a
+        /// choice without probing PATH from inside the app.
+        public var agents: [AgentInfo]
 
         public init(health: HealthDTO, projects: [Project], inbox: [InboxItem],
                     activeRuns: [Run], recentRuns: [Run],
-                    recents: [ProjectDigest] = [], stats: Stats = Stats()) {
+                    recents: [ProjectDigest] = [], stats: Stats = Stats(),
+                    agents: [AgentInfo] = []) {
             self.health = health; self.projects = projects; self.inbox = inbox
             self.activeRuns = activeRuns; self.recentRuns = recentRuns
-            self.recents = recents; self.stats = stats
+            self.recents = recents; self.stats = stats; self.agents = agents
         }
 
         // A daemon that has not been restarted since the app was updated is a
@@ -352,6 +379,7 @@ public enum API {
             recentRuns = try c.decodeIfPresent([Run].self, forKey: .recentRuns) ?? []
             recents = try c.decodeIfPresent([ProjectDigest].self, forKey: .recents) ?? []
             stats = try c.decodeIfPresent(Stats.self, forKey: .stats) ?? Stats()
+            agents = try c.decodeIfPresent([AgentInfo].self, forKey: .agents) ?? []
         }
     }
 }

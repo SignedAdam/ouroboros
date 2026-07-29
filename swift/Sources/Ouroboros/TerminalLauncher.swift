@@ -10,7 +10,13 @@ func shquote(_ s: String) -> String {
 }
 
 public struct TerminalLauncher: Sendable {
-    public enum Kind: String, Sendable { case ghosttyTmuxTab, ghosttyCinemaWindow, osDefault, custom }
+    public enum Kind: String, Sendable {
+        case ghosttyTmuxTab, ghosttyCinemaWindow, osDefault, custom
+        /// A plain window that stays open — for the things a person drives
+        /// rather than watches: reopening an agent's conversation, agent view.
+        /// No splash, no self-closing, no tmux session to get tangled in.
+        case ghosttyWindow
+    }
 
     public let kind: Kind
     /// The dedicated tmux session agents live in. Agents NEVER open windows in the
@@ -41,6 +47,10 @@ public struct TerminalLauncher: Sendable {
         switch kind {
         case .ghosttyTmuxTab: launchGhosttyTmuxTab(inv, script)
         case .ghosttyCinemaWindow: launchCinema(inv)
+        case .ghosttyWindow:
+            run([ghosttyBinary(), "--window-width=120", "--window-height=36",
+                 "--title=\(inv.title.isEmpty ? inv.label : inv.title)",
+                 "-e", "zsh", script])
         case .osDefault: run(["open", "-a", "Terminal", script])
         case .custom: customLaunch?(inv, script)
         }

@@ -21,21 +21,63 @@ public struct Pulse: Codable, Sendable, Equatable {
     }
 }
 
-/// A run, reduced to what fits on one line of the drawer.
+/// A run, reduced to what fits on one line of the drawer — and to what you can
+/// do with it from there.
 public struct RunPip: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var status: RunStatus
     public var title: String
     public var at: Date
     public var seconds: Int?
+    public var agent: String
+    /// The harness's conversation id, when it has one. Absent means "reopening
+    /// this is not on the menu", which is different from "it failed".
+    public var sessionId: String?
+    public var canResume: Bool
+    public var worktreePath: String?
+    public var branch: String?
 
-    public init(id: String, status: RunStatus, title: String, at: Date, seconds: Int? = nil) {
+    public init(id: String, status: RunStatus, title: String, at: Date, seconds: Int? = nil,
+                agent: String = "", sessionId: String? = nil, canResume: Bool = false,
+                worktreePath: String? = nil, branch: String? = nil) {
         self.id = id
         self.status = status
         self.title = title
         self.at = at
         self.seconds = seconds
+        self.agent = agent
+        self.sessionId = sessionId
+        self.canResume = canResume
+        self.worktreePath = worktreePath
+        self.branch = branch
     }
+}
+
+/// An issue nobody has been dispatched for — and everything needed to change
+/// that from a right-click.
+public struct TaskPip: Codable, Sendable, Equatable, Identifiable {
+    public var id: String
+    public var title: String
+    public var path: String
+    public var at: Date?
+
+    public init(id: String, title: String, path: String, at: Date? = nil) {
+        self.id = id
+        self.title = title
+        self.path = path
+        self.at = at
+    }
+}
+
+/// Which of the drawer's three lists a project belongs to. Assigned by the
+/// daemon so the app never has to re-derive it and get a different answer.
+public enum ProjectSection: String, Codable, Sendable {
+    /// Pinned by hand. Always shown, however cold.
+    case favourite
+    /// Ouroboros has been used here — issues filed, agents run.
+    case ouroboros
+    /// Only git says anything happened. Never filed against.
+    case git
 }
 
 /// One project, as the capture panel needs it: what happened here last, what
@@ -51,11 +93,16 @@ public struct ProjectDigest: Codable, Sendable, Equatable, Identifiable {
     /// Ouroboros has actually been used here: filed an issue, or run an agent.
     /// False means this project is only in the list because you committed to it.
     public var handled: Bool
+    public var section: ProjectSection
+    public var favourite: Bool
     public var autonomy: Autonomy
+    /// The harness this project dispatches to, resolved: its own default, or
+    /// the global one.
+    public var agent: String
     public var pulse: Pulse?
     /// Issues filed and never dispatched — the work you have described but not
     /// yet handed to anyone.
-    public var tasks: [String]
+    public var tasks: [TaskPip]
     public var taskCount: Int
     /// Newest first.
     public var jobs: [RunPip]
@@ -63,14 +110,19 @@ public struct ProjectDigest: Codable, Sendable, Equatable, Identifiable {
     public var fixed: Int
     public var failed: Int
 
-    public init(id: String, name: String, path: String, handled: Bool, autonomy: Autonomy,
-                pulse: Pulse? = nil, tasks: [String] = [], taskCount: Int = 0,
+    public init(id: String, name: String, path: String, handled: Bool,
+                section: ProjectSection = .git, favourite: Bool = false,
+                autonomy: Autonomy = .manual, agent: String = "",
+                pulse: Pulse? = nil, tasks: [TaskPip] = [], taskCount: Int = 0,
                 jobs: [RunPip] = [], running: Int = 0, fixed: Int = 0, failed: Int = 0) {
         self.id = id
         self.name = name
         self.path = path
         self.handled = handled
+        self.section = section
+        self.favourite = favourite
         self.autonomy = autonomy
+        self.agent = agent
         self.pulse = pulse
         self.tasks = tasks
         self.taskCount = taskCount
@@ -164,8 +216,8 @@ public enum GitLog {
 public final class Digests: @unchecked Sendable {
     private struct Facts {
         var lastIssue: Pulse?
-        /// Titles and paths of issues still sitting in `.issues/new`, newest first.
-        var open: [(title: String, path: String)]
+        /// Issues still sitting in `.issues/new`, newest first.
+        var open: [(title: String, path: String, at: Date?)]
         var git: Pulse?
     }
 
@@ -176,7 +228,9 @@ public final class Digests: @unchecked Sendable {
 
     /// `runs` is every known run — passed in rather than fetched so the caller
     /// reads the store once for the whole snapshot.
-    public func digest(_ project: Project, runs: [Run]) -> ProjectDigest {
+    public func digest(_ project: Project, runs: [Run],
+                       defaultAgent: String = "",
+                       resumable: (Run) -> Bool = { _ in false }) -> ProjectDigest {
         let facts = facts(for: project)
         let mine = runs.filter { $0.projectId == project.id }
 
@@ -189,7 +243,12 @@ public final class Digests: @unchecked Sendable {
         let jobs = mine.prefix(4).map { run in
             RunPip(id: run.id, status: run.status, title: run.title,
                    at: run.endedAt ?? run.startedAt ?? run.queuedAt,
-                   seconds: run.duration.map { Int($0) })
+                   seconds: run.duration.map { Int($0) },
+                   agent: run.agent,
+                   sessionId: run.sessionId,
+                   canResume: run.sessionId != nil && resumable(run),
+                   worktreePath: run.worktreePath,
+                   branch: run.branch)
         }
 
         let handled = project.lastUsed != nil || !mine.isEmpty || facts.lastIssue != nil
@@ -203,9 +262,15 @@ public final class Digests: @unchecked Sendable {
             name: project.name,
             path: project.path,
             handled: handled,
+            section: project.favourite ? .favourite : (handled ? .ouroboros : .git),
+            favourite: project.favourite,
             autonomy: project.policy.autonomy,
+            agent: project.defaultAgent ?? defaultAgent,
             pulse: pulse,
-            tasks: waiting.prefix(3).map(\.title),
+            tasks: waiting.prefix(4).map {
+                TaskPip(id: IssueService.id(project: project, path: $0.path),
+                        title: $0.title, path: $0.path, at: $0.at)
+            },
             taskCount: waiting.count,
             jobs: Array(jobs),
             running: mine.filter { $0.status.isActive && $0.status != .queued }.count,
@@ -231,7 +296,7 @@ public final class Digests: @unchecked Sendable {
             lastIssue: newest.flatMap { issue in
                 issue.created.map { Pulse(kind: "filed", text: issue.title, at: $0) }
             },
-            open: issues.filter { $0.status == .new }.map { ($0.title, $0.path ?? "") },
+            open: issues.filter { $0.status == .new }.map { ($0.title, $0.path ?? "", $0.created) },
             git: GitLog.lastEvent(repo: project.path))
 
         lock.lock()

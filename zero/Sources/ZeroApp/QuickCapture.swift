@@ -349,6 +349,9 @@ struct QuickCaptureView: View {
                     withAnimation(.easeOut(duration: 0.15)) { model.recentsExpanded.toggle() }
                 }
                 .padding(.top, -1)
+                // Task and job rows reach the model through the environment
+                // rather than threading it down four levels of view.
+                .environmentObject(model)
             }
         }
         .frame(width: 560)
@@ -407,6 +410,31 @@ struct QuickCaptureView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+
+                // Which harness this capture goes to. There was no way to say
+                // "use codex for this one" anywhere in the product before, and
+                // the answer was buried in a JSON file.
+                Menu {
+                    ForEach(model.availableAgents, id: \.self) { agent in
+                        Button(agent + (agent == model.effectiveAgent ? "  ✓" : "")) {
+                            model.agentOverride = agent
+                        }
+                    }
+                    if model.agentOverride != nil {
+                        Divider()
+                        Button("Use this project's default") { model.agentOverride = nil }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "cpu")
+                        Text(model.effectiveAgent)
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(model.agentOverride != nil ? ouroOrange : Color.secondary)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .help("which coding agent this capture will dispatch to")
 
                 if let flash {
                     Text(flash)

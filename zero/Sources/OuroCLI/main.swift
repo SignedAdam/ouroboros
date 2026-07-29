@@ -32,12 +32,17 @@ func help() {
         ("  ouro reply <run> \"use the second approach\"", "answer an agent's question"),
         ("  ouro merge <run> / undo <run>", "land it / take it back"),
         ("  ouro stop <run> / retry <run> / ok <run>", ""),
+        ("  ouro show <run>", "everything about one run, conversation id included"),
+        ("  ouro resume <run>", "reopen that agent's conversation"),
+        ("  ouro agents", "which harnesses this machine can dispatch to"),
         ("", ""),
         ("projects", ""),
         ("  ouro projects", "list"),
         ("  ouro projects add .", "register the repo you're in"),
         ("  ouro projects discover ~/dev", "register every repo under a root"),
         ("  ouro projects set <id> --verify \"swift build\" --autonomy auto", ""),
+        ("  ouro projects favourite|hide <id>", "pin it / drop it from the panel"),
+        ("  ouro projects agent <id> codex", "which harness this project uses"),
         ("  ouro rename <project> <new-name>", "call it something else"),
         ("  ouro new <name> --desc \"…\" --github private --roadmap ai", "start something"),
         ("", ""),
@@ -80,6 +85,9 @@ case "log", "logs":                   Commands.log(args)
 case "diff":                          Commands.diff(args)
 case "reply", "stop", "merge", "undo", "retry", "ok", "drop", "ack":
                                       Commands.runAction(args.command, args)
+case "resume":                        Commands.resume(args)
+case "show":                          Commands.show(args)
+case "agents":                        Commands.agents(args)
 case "inbox":                         Commands.inbox(args)
 case "idea":                          Commands.idea(args)
 case "ideas":                         Commands.ideas(args)

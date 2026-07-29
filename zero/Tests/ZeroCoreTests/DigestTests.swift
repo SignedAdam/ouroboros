@@ -99,7 +99,7 @@ final class DigestTests: XCTestCase {
 
         let digest = Digests().digest(project, runs: [run])
         XCTAssertEqual(digest.taskCount, 1)
-        XCTAssertEqual(digest.tasks, ["still waiting"])
+        XCTAssertEqual(digest.tasks.map(\.title), ["still waiting"])
         XCTAssertEqual(digest.jobs.map(\.id), ["r-1"])
         XCTAssertEqual(digest.running, 1)
         XCTAssertTrue(digest.handled)
@@ -194,7 +194,7 @@ final class SnapshotDecodingTests: XCTestCase {
         let digest = ProjectDigest(id: "p", name: "p", path: "/tmp/p", handled: true,
                                    autonomy: .assist,
                                    pulse: Pulse(kind: "filed", text: "x", at: Date()),
-                                   tasks: ["a"], taskCount: 1)
+                                   tasks: [TaskPip(id: "t1", title: "a", path: "/tmp/a.md")], taskCount: 1)
         let snapshot = API.Snapshot(
             health: HealthDTO(ok: true, version: "0.1.0", pid: 1, uptime: 1, projects: 1,
                               activeRuns: 0, queuedRuns: 0, inbox: 0),
@@ -203,9 +203,9 @@ final class SnapshotDecodingTests: XCTestCase {
             stats: API.Stats(handled: 3, fixed: 2, tape: [.succeeded, .failed]))
         let decoded = try XCTUnwrap(
             Zero.decode(API.Snapshot.self, from: Zero.encode(snapshot)))
-        XCTAssertEqual(decoded.recents.first?.tasks, ["a"])
+        XCTAssertEqual(decoded.recents.first?.tasks.map(\.title), ["a"])
         XCTAssertEqual(decoded.recents.first?.autonomy, .assist)
-        XCTAssertEqual(decoded.stats.tape, [.succeeded, .failed])
+        XCTAssertEqual(decoded.stats.tape, [RunStatus.succeeded, .failed])
         XCTAssertEqual(decoded.stats.fixed, 2)
     }
 }

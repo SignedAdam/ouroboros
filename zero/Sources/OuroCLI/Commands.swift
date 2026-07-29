@@ -429,6 +429,79 @@ enum Commands {
 
     // MARK: - projects
 
+    /// Everything known about one run, including the conversation behind it.
+    static func show(_ args: Args) {
+        guard let id = args.positional.first else { Out.die("usage: ouro show <run>") }
+        let client = Zero0.connected()
+        guard let run = try? client.get("/v1/runs/\(id)", as: Run.self) else {
+            Out.die("no such run")
+        }
+        print("")
+        print("  \(Fmt.glyph(run.status)) \(Ansi.bold(run.title))")
+        print("    " + Ansi.dim(Ansi.pad("run", 12)) + run.id)
+        print("    " + Ansi.dim(Ansi.pad("project", 12)) + run.projectName)
+        print("    " + Ansi.dim(Ansi.pad("agent", 12)) + run.agent)
+        print("    " + Ansi.dim(Ansi.pad("status", 12)) + Fmt.status(run.status))
+        if let branch = run.branch {
+            print("    " + Ansi.dim(Ansi.pad("branch", 12)) + branch + Ansi.dim(" from \(run.base)"))
+        }
+        if let worktree = run.worktreePath {
+            print("    " + Ansi.dim(Ansi.pad("worktree", 12)) + worktree)
+        }
+        if let session = run.sessionId {
+            print("    " + Ansi.dim(Ansi.pad("conversation", 12)) + session)
+            print("    " + Ansi.dim(Ansi.pad("", 12) + "reopen it: ouro resume \(run.id)"))
+        } else {
+            print("    " + Ansi.dim(Ansi.pad("conversation", 12) + "not recorded"))
+        }
+        if let note = run.note, !note.isEmpty {
+            print("    " + Ansi.dim(Ansi.pad("note", 12)) + Fmt.truncate(note, 60))
+        }
+        print("")
+    }
+
+    /// Reopen a run's own conversation in a terminal.
+    ///
+    /// The daemon does the launching, not this process: the CLI may be running
+    /// inside the very window you are trying to leave, and the terminal a run
+    /// belongs to is the supervisor's business either way.
+    static func resume(_ args: Args) {
+        guard let id = args.positional.first else {
+            Out.die("usage: ouro resume <run>   (ouro runs to list them)")
+        }
+        let client = Zero0.connected()
+        do {
+            let resumed: API.Resumed = try client.post("/v1/runs/\(id)/resume", ZeroClient.Empty())
+            Out.ok("reopening \(Ansi.bold(resumed.runId))")
+            print("    " + Ansi.dim(resumed.command))
+            print("    " + Ansi.dim("in \(resumed.cwd)"))
+        } catch { Out.die("\(error)") }
+    }
+
+    /// Which harnesses this machine can actually dispatch to, and which of them
+    /// can be talked to again afterwards.
+    static func agents(_ args: Args) {
+        let client = Zero0.connected()
+        guard let list = try? client.get("/v1/agents", as: API.AgentList.self) else {
+            Out.die("could not read the agent list")
+        }
+        print("")
+        print("  " + Ansi.bold("agents"))
+        for agent in list.agents {
+            let mark = agent.available ? Ansi.green("●") : Ansi.dim("○")
+            var notes: [String] = []
+            if agent.isDefault { notes.append("default") }
+            if !agent.available { notes.append("not on PATH") }
+            if agent.available && agent.canResume { notes.append("conversations can be reopened") }
+            print("    \(mark) \(Ansi.pad(agent.name, 12))"
+                  + Ansi.dim(notes.joined(separator: " · ")))
+        }
+        print("")
+        print("  " + Ansi.dim("per project: ouro projects agent <id> <agent>   ·   "
+                              + "per issue: ouro i \"…\" --fix -a codex"))
+        print("")
+    }
+
     static func projects(_ args: Args) {
         let client = Zero0.connected()
         let sub = args.positional.first
@@ -472,6 +545,39 @@ enum Commands {
                 let project: Project = try client.patch("/v1/projects/\(args.positional[1])", patch)
                 Out.ok("updated \(project.name)")
                 printProject(project)
+            } catch { Out.die("\(error)") }
+
+        // Curation. The capture panel's favourites, hiding and per-project
+        // harness are these verbs — its menus are a second face on exactly
+        // this, never a private path.
+        case "favourite", "favorite", "unfavourite", "unfavorite", "hide", "unhide":
+            guard args.positional.count > 1 else {
+                Out.die("usage: ouro projects \(sub ?? "favourite") <id>")
+            }
+            let on = !(sub ?? "").hasPrefix("un")
+            let hiding = (sub ?? "").hasSuffix("hide")
+            do {
+                let project: Project = try client.patch(
+                    "/v1/projects/\(args.positional[1])",
+                    hiding ? API.PatchProject(hidden: on) : API.PatchProject(favourite: on))
+                if hiding {
+                    Out.ok(on
+                        ? "hid \(project.name) — it comes back the next time you file or fix here"
+                        : "\(project.name) is back in the panel")
+                } else {
+                    Out.ok(on ? "pinned \(project.name)" : "unpinned \(project.name)")
+                }
+            } catch { Out.die("\(error)") }
+
+        case "agent":
+            guard args.positional.count > 2 else {
+                Out.die("usage: ouro projects agent <id> <claude|codex|…>   (see: ouro agents)")
+            }
+            do {
+                let project: Project = try client.patch(
+                    "/v1/projects/\(args.positional[1])",
+                    API.PatchProject(defaultAgent: args.positional[2]))
+                Out.ok("\(project.name) now dispatches to \(project.defaultAgent ?? "the default")")
             } catch { Out.die("\(error)") }
 
         case "discover":

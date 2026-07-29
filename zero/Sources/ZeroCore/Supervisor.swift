@@ -240,14 +240,24 @@ public final class Supervisor: @unchecked Sendable {
         run.prompt = prompt
         run.status = .running
         run.startedAt = Date()
-        runs.save(run)
 
         // Wrap the agent in the shim so the run is observable.
         guard let template = config.agentTemplate(run.agent) else {
+            runs.save(run)
             fail(run.id, note: "unknown agent '\(run.agent)'")
             return
         }
-        let agentArgv = template.map { $0 == "{prompt}" ? prompt : $0 }
+        // Give the conversation an identity before it starts, so "show me what
+        // the agent was actually thinking" is one command away rather than an
+        // archaeology exercise. Harnesses that won't be told get asked when
+        // they exit — see `captureSession`.
+        let harness = Harness.of(agent: run.agent, template: template)
+        let sessionId = run.sessionId ?? UUID().uuidString
+        if harness.acceptsSessionId { run.sessionId = sessionId }
+        runs.save(run)
+
+        let agentArgv = Agents.dispatchArgv(template: template, prompt: prompt,
+                                            sessionId: sessionId, harness: harness)
         let argv = [ouroPath, "run-shim", run.id, "--home", home, "--"] + agentArgv
 
         let invocation = AgentInvocation(argv: argv, cwd: run.cwd, label: run.id, title: run.title)
@@ -306,8 +316,51 @@ public final class Supervisor: @unchecked Sendable {
             run.endedAt = Date()
             run.status = .verifying
         }), claimed else { return }
+        captureSession(run)
         publish("run.verifying", run)
         work.async { [weak self] in self?.finalize(id) }
+    }
+
+    /// Ask a harness that would not be told what it called the conversation.
+    ///
+    /// Runs once, at exit, because a rollout file only identifies itself after
+    /// the session has written its first line — and by exit there is exactly
+    /// one candidate for this working directory.
+    private func captureSession(_ run: Run) {
+        guard run.sessionId == nil else { return }
+        let harness = Harness.of(agent: run.agent, template: config.agentTemplate(run.agent))
+        guard harness == .codex else { return }
+        guard let found = Agents.discoverCodexSession(
+            cwd: run.worktreePath ?? run.cwd,
+            since: run.startedAt ?? run.queuedAt) else { return }
+        runs.mutate(run.id) { $0.sessionId = found }
+    }
+
+    /// Everything needed to reopen a run's conversation in a terminal, or nil
+    /// when this harness has no way back in.
+    public func resumeInvocation(_ id: String) -> (argv: [String], cwd: String)? {
+        guard let run = runs.get(id), let sessionId = run.sessionId else { return nil }
+        let template = config.agentTemplate(run.agent)
+        let harness = Harness.of(agent: run.agent, template: template)
+        guard let argv = Agents.resumeArgv(harness: harness, template: template,
+                                           sessionId: sessionId) else { return nil }
+        // The worktree, not the project root: that is where the work happened,
+        // and the conversation's file references only resolve there.
+        let cwd = run.worktreePath.flatMap {
+            FileManager.default.fileExists(atPath: $0) ? $0 : nil
+        } ?? run.cwd
+        return (argv, cwd)
+    }
+
+    /// Reopen the conversation in its own terminal window.
+    @discardableResult
+    public func resume(_ id: String) -> String? {
+        guard let run = runs.get(id) else { return nil }
+        guard let (argv, cwd) = resumeInvocation(id) else { return nil }
+        TerminalLauncher(kind: .ghosttyWindow).launch(
+            AgentInvocation(argv: argv, cwd: cwd, label: "resume-\(run.id)",
+                            title: "resume · \(run.title)"))
+        return argv.joined(separator: " ")
     }
 
     // MARK: - Gate + finish

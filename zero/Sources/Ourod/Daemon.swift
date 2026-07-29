@@ -137,6 +137,8 @@ final class Daemon: @unchecked Sendable {
         case ("GET", "snapshot"):  return .json(snapshot())
         case ("GET", "events"):    return eventStream()
         case ("GET", "config"):    return .json(config)
+        case ("GET", "agents"):
+            return .json(API.AgentList(agents: agentList(), defaultAgent: config.defaultAgent))
         case ("POST", "setup"):    return setup(request)
         case ("POST", "update"):   return selfUpdate()
         case ("POST", "shutdown"):
@@ -210,6 +212,13 @@ final class Daemon: @unchecked Sendable {
             if let v = body.worktreeDefault { project.policy.worktreeDefault = v }
             if let v = body.finishDefault, let parsed = Finish(rawValue: v) { project.policy.finishDefault = parsed }
             if let v = body.protectedPaths { project.policy.protectedPaths = v }
+            if let v = body.favourite {
+                project.favourite = v
+                // Pinning something you had hidden is a change of mind, and
+                // leaving it hidden would make the pin do nothing.
+                if v { project.hidden = false }
+            }
+            if let v = body.hidden { project.hidden = v }
             registry.upsert(project)
             return .json(project)
 
@@ -404,6 +413,22 @@ final class Daemon: @unchecked Sendable {
                 agent: body.agent, worktree: body.worktree, finish: finish(body.finish)))
             return .json(run, status: 201)
 
+        case ("DELETE", 2):
+            guard let (project, issue) = issues.find(path[1]) else {
+                return .error("no such issue", status: 404)
+            }
+            // Cancelled, not erased: the trail from "half a thought at midnight"
+            // to "never mind" is worth as much as the one that ends in a fix.
+            // `?purge=1` is the one that really deletes the file.
+            if request.q("purge") == "1" {
+                guard let file = issue.path else { return .error("issue has no file") }
+                try? FileManager.default.removeItem(atPath: file)
+                return .json(API.Message(message: "deleted \(issue.title)"))
+            }
+            guard let moved = issues.setStatus(project: project, issue: issue, status: .cancelled)
+            else { return .error("could not cancel that issue") }
+            return .json(moved)
+
         default:
             return .error("no route", status: 404)
         }
@@ -497,6 +522,21 @@ final class Daemon: @unchecked Sendable {
                 return .json(supervisor.dispatchFreeform(project: project, title: run.title,
                                                          prompt: run.prompt ?? run.title,
                                                          options: .init(agent: run.agent)), status: 201)
+            case "resume":
+                // Reopen the agent's own conversation in a terminal. Refused
+                // rather than faked when there is nothing to reopen: a window
+                // that opens onto an error is worse than a menu item that
+                // never appeared.
+                guard let (argv, cwd) = supervisor.resumeInvocation(run.id) else {
+                    let harness = Harness.of(agent: run.agent,
+                                             template: config.agentTemplate(run.agent))
+                    return .error(run.sessionId == nil
+                        ? "this run has no recorded conversation — it predates session capture"
+                        : "\(run.agent): \(harness.resumeHint)")
+                }
+                supervisor.resume(run.id)
+                return .json(API.Resumed(runId: run.id,
+                                         command: argv.joined(separator: " "), cwd: cwd))
             default:
                 return .error("no route", status: 404)
             }
@@ -771,7 +811,12 @@ final class Daemon: @unchecked Sendable {
 
     func snapshot() -> API.Snapshot {
         let all = runs.all()
-        let recents = recentProjects().map { digests.digest($0, runs: all) }
+        let recents = recentProjects().map { project in
+            digests.digest(project, runs: all, defaultAgent: config.defaultAgent) { run in
+                Harness.of(agent: run.agent,
+                           template: self.config.agentTemplate(run.agent)).canResume
+            }
+        }
         return API.Snapshot(
             health: health(),
             projects: registry.all(),
@@ -788,25 +833,50 @@ final class Daemon: @unchecked Sendable {
                 projects: registry.all().count,
                 // Oldest first: a tape is read left to right, and the newest
                 // run belongs at the end where the eye lands.
-                tape: Array(all.prefix(12)).reversed().map(\.status)))
+                tape: Array(all.prefix(12)).reversed().map(\.status)),
+            agents: agentList())
     }
 
-    /// Two kinds of recent, in one list. What you have pointed Ouroboros at
-    /// comes first — that is the picker's real job — and what you have been
-    /// committing to follows, so a repo Ouroboros has never touched is still
-    /// one click away the moment it becomes the thing you are working on.
+    /// Three kinds of recent, in one ordered list, each project appearing once
+    /// in the highest section that claims it:
     ///
-    /// Directories that have since been deleted are dropped: a recents list is
-    /// a set of offers, and offering something that isn't there is a bug.
+    ///   favourites — pinned by hand, shown however cold they are
+    ///   ouroboros  — you have filed or run something here
+    ///   git        — you have only committed here; Ouroboros has never been used
+    ///
+    /// Hidden projects are dropped until `Registry.touch` clears the flag, and
+    /// so are directories that no longer exist: a recents list is a set of
+    /// offers, and offering something that isn't there is a bug.
     private func recentProjects() -> [Project] {
         let fm = FileManager.default
-        let used = registry.recentlyUsed(limit: 5)
-            .filter { fm.fileExists(atPath: $0.path) }
+        func live(_ projects: [Project]) -> [Project] {
+            projects.filter { !$0.hidden && fm.fileExists(atPath: $0.path) }
+        }
+        let favourites = live(registry.all().filter(\.favourite))
+        let taken = Set(favourites.map(\.id))
+        let used = live(registry.recentlyUsed(limit: 8))
+            .filter { !taken.contains($0.id) }
             .prefix(4)
-        let byGit = registry.recentlyTouchedByGit(limit: 4, excluding: Set(used.map(\.id)))
-            .filter { fm.fileExists(atPath: $0.path) }
+        let byGit = live(registry.recentlyTouchedByGit(
+                limit: 8, excluding: taken.union(used.map(\.id))))
             .prefix(3)
-        return Array(used) + Array(byGit)
+        return favourites + Array(used) + Array(byGit)
+    }
+
+    /// The harnesses that could actually be dispatched to right now. Anything
+    /// whose CLI is missing is reported unavailable rather than hidden, so
+    /// "there is no codex here" is a visible fact instead of a silent absence.
+    func agentList() -> [AgentInfo] {
+        let names = Set(config.agents.keys).union(Config.defaultAgents.keys).sorted()
+        return names.map { name in
+            let template = config.agentTemplate(name)
+            let harness = Harness.of(agent: name, template: template)
+            return AgentInfo(
+                name: name,
+                available: (template?.first).flatMap { Shell.which($0) } != nil,
+                isDefault: name == config.defaultAgent,
+                canResume: harness.canResume)
+        }
     }
 
     private func eventStream() -> HTTPResponse {

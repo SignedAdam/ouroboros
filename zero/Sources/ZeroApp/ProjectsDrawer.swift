@@ -192,7 +192,14 @@ private struct ProjectRow: View {
     let selected: Bool
     var onSelect: () -> Void
 
+    @EnvironmentObject var model: AppModel
     @State private var hovering = false
+
+    /// The registry record behind the digest. The digest is a display shape; the
+    /// verbs need the real project.
+    private var project: Project? {
+        model.projects.first { $0.id == digest.id }
+    }
 
     var body: some View {
         Button(action: onSelect) {
@@ -217,6 +224,39 @@ private struct ProjectRow: View {
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
+        .contextMenu {
+            if let project { RowActions.projectMenu(project, model: model) }
+        }
+        .help("right-click to favourite, hide, set the agent, or open it")
+    }
+
+    /// The hover affordance: the row says what it can do before you commit to a
+    /// click. Only on the row under the pointer, so a list of ten does not turn
+    /// into a wall of buttons.
+    @ViewBuilder
+    private var hoverActions: some View {
+        if hovering, let project {
+            HStack(spacing: 7) {
+                Button {
+                    model.patchProject(project.id, API.PatchProject(favourite: !project.favourite))
+                } label: {
+                    Image(systemName: project.favourite ? "star.fill" : "star")
+                }
+                .help(project.favourite ? "remove from favourites" : "keep this one at the top")
+
+                Button { NSWorkspace.shared.open(URL(fileURLWithPath: project.path)) } label: {
+                    Image(systemName: "folder")
+                }
+                .help("open in Finder")
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 9))
+            .foregroundStyle(.secondary)
+        } else if let project, project.favourite {
+            Image(systemName: "star.fill")
+                .font(.system(size: 8))
+                .foregroundStyle(ouroOrange.opacity(0.7))
+        }
     }
 
     @ViewBuilder
@@ -238,14 +278,19 @@ private struct ProjectRow: View {
                 .foregroundStyle(selected ? Color.primary : Color.primary.opacity(0.85))
                 .lineLimit(1)
 
-            if digest.autonomy != .manual {
-                Text(digest.autonomy.label)
+            // Was a bare "auto" chip, which read as a property of a job and
+            // meant nothing to anyone who had not read the source. Autonomy is a
+            // policy about MERGING, so it says what it will do to your code, and
+            // only when it is going to do something surprising.
+            if digest.autonomy == .auto {
+                Text("auto-merge")
                     .font(.system(size: 8, weight: .semibold))
                     .kerning(0.4)
                     .foregroundStyle(ouroOrange.opacity(0.85))
                     .padding(.horizontal, 4)
                     .padding(.vertical, 1)
                     .background(ouroOrange.opacity(0.12), in: Capsule())
+                    .help("verified fixes merge into this project without asking")
             }
 
             if digest.running > 0 {
@@ -255,7 +300,11 @@ private struct ProjectRow: View {
                         .font(.system(size: 9, weight: .semibold, design: .monospaced))
                         .foregroundStyle(ouroOrange)
                 }
+                .help("\(digest.running) agent\(digest.running == 1 ? "" : "s") working here right now")
             }
+
+            Spacer(minLength: 4)
+            hoverActions
 
             Spacer(minLength: 8)
 
@@ -330,11 +379,8 @@ private struct ProjectRow: View {
 
             if !digest.tasks.isEmpty {
                 section("TASKS", count: digest.taskCount) {
-                    ForEach(Array(digest.tasks.prefix(2).enumerated()), id: \.offset) { _, task in
-                        Text(task)
-                            .font(.system(size: 10))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                    ForEach(digest.tasks.prefix(2)) { task in
+                        TaskRow(task: task, project: digest.id)
                     }
                 }
             }

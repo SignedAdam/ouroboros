@@ -14,6 +14,12 @@ final class AppModel: ObservableObject {
     @Published var selectedProjectId: String?
     @Published var status: String?
     @Published var busy = false
+    /// An explicit harness pick for this capture only. Deliberately not written
+    /// back to the project: choosing codex once should not silently retarget
+    /// every future dispatch. The context menu changes the project default.
+    @Published var agentOverride: String?
+    /// The issue just filed, so the confirmation can offer verbs for it.
+    @Published var lastFiled: IssueDTO?
 
     private let client = ZeroClient()
     private var timer: Timer?
@@ -117,7 +123,8 @@ final class AppModel: ObservableObject {
             return
         }
         busy = true
-        let request = API.CreateIssue(project: project.id, title: nil, body: body, fix: fix)
+        let request = API.CreateIssue(project: project.id, title: nil, body: body,
+                                      fix: fix, agent: fix ? effectiveAgent : nil)
         Task.detached { [client] in
             let created = try? client.post("/v1/issues", request, as: API.IssueCreated.self)
             await MainActor.run { [weak self] in
@@ -125,8 +132,12 @@ final class AppModel: ObservableObject {
                 self.busy = false
                 if let created {
                     self.draft = ""
+                    // Filing used to end here, with a line of text and nothing to
+                    // do about it. Holding the issue means the confirmation can
+                    // offer fix / open / undo on the thing you just made.
+                    self.lastFiled = created.run == nil ? created.issue : nil
                     self.status = created.run != nil
-                        ? "dispatched \(created.run!.agent) · \(created.issue.title)"
+                        ? "\(created.run!.agent) is on it · \(created.issue.title)"
                         : "filed · \(created.issue.title)"
                 } else {
                     self.status = "could not file that"
@@ -134,6 +145,15 @@ final class AppModel: ObservableObject {
                 self.refresh()
             }
         }
+    }
+
+    /// Delete the issue this capture just wrote. Offered only for that issue and
+    /// only while its confirmation is up, so undo can never hit anything else.
+    func undoLastFiled() {
+        guard let issue = lastFiled else { return }
+        lastFiled = nil
+        status = "undone"
+        deleteIssue(issue.id)
     }
 
     func runAction(_ action: String, runId: String, answer: String? = nil) {
@@ -165,6 +185,97 @@ final class AppModel: ObservableObject {
         Task.detached { [client] in
             _ = try? client.post("/v1/proposals/\(id)/\(action)", as: API.IssueCreated.self)
             await MainActor.run { [weak self] in self?.refresh() }
+        }
+    }
+
+    // MARK: - row verbs
+    //
+    // Every one of these is an HTTP call the CLI could make. The drawer's
+    // context menus are a second face on the same API, never a private path.
+
+    /// Only harnesses actually installed. Offering a choice the machine cannot
+    /// honour is worse than offering none.
+    var availableAgents: [String] {
+        let installed = (snapshot?.agents ?? []).filter(\.available).map(\.name)
+        return installed.isEmpty ? [snapshot?.health.version != nil ? "claude" : "claude"] : installed
+    }
+
+    /// The agent this capture will dispatch to: an explicit pick for this
+    /// capture, else the target project's default, else the global default.
+    var effectiveAgent: String {
+        agentOverride
+            ?? selectedProject?.defaultAgent
+            ?? (snapshot?.agents ?? []).first(where: \.isDefault)?.name
+            ?? availableAgents.first
+            ?? "claude"
+    }
+
+    func patchProject(_ id: String, _ patch: API.PatchProject) {
+        Task.detached { [client] in
+            _ = try? client.patch("/v1/projects/\(id)", patch, as: Project.self)
+            await MainActor.run { [weak self] in self?.refresh() }
+        }
+    }
+
+    func forgetProject(_ id: String) {
+        Task.detached { [client] in
+            _ = try? client.delete("/v1/projects/\(id)", as: API.Message.self)
+            await MainActor.run { [weak self] in self?.refresh() }
+        }
+    }
+
+    func fixIssue(_ issueId: String, agent: String? = nil) {
+        status = "dispatching…"
+        Task.detached { [client] in
+            let run = try? client.post("/v1/issues/\(issueId)/fix",
+                                       API.FixRequest(agent: agent), as: Run.self)
+            await MainActor.run { [weak self] in
+                self?.status = run.map { "\($0.agent) is on it" } ?? "could not dispatch"
+                self?.refresh()
+            }
+        }
+    }
+
+    func deleteIssue(_ issueId: String) {
+        Task.detached { [client] in
+            _ = try? client.delete("/v1/issues/\(issueId)", as: API.Message.self)
+            await MainActor.run { [weak self] in self?.refresh() }
+        }
+    }
+
+    func resumeRun(_ runId: String) {
+        status = "reopening the conversation…"
+        Task.detached { [client] in
+            let reply = try? client.post("/v1/runs/\(runId)/resume", as: API.Message.self)
+            await MainActor.run { [weak self] in
+                self?.status = reply?.message ?? "could not resume that one"
+            }
+        }
+    }
+
+    func openLog(_ runId: String) { RowActions.copy("ouro log \(runId) -f"); status = "copied: ouro log \(runId) -f" }
+    func showDiff(_ runId: String) { RowActions.copy("ouro diff \(runId)"); status = "copied: ouro diff \(runId)" }
+
+    func openWorktree(_ runId: String) {
+        guard let run = (activeRuns + recentRuns).first(where: { $0.id == runId }),
+              let path = run.worktreePath else { return }
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+    }
+
+    func openTerminal(at path: String) {
+        Task.detached {
+            Shell.run(["open", "-a", "Ghostty", path], login: true)
+        }
+    }
+
+    /// `claude agents` is a fleet view of your OWN background sessions in a
+    /// repo. Ouroboros owns its supervised runs and does not hand them over, so
+    /// this is offered per project rather than per run.
+    func openAgentView(_ project: Project) {
+        Task.detached {
+            let script = "cd \(Shell.quote(project.path)) && claude agents --cwd \(Shell.quote(project.path))"
+            Shell.run(["/Applications/Ghostty.app/Contents/MacOS/ghostty",
+                       "--title=agent view", "-e", "zsh", "-lc", script], login: true)
         }
     }
 
