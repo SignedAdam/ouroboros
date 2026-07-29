@@ -345,8 +345,12 @@ public final class Supervisor: @unchecked Sendable {
             // Put the agent's own last words in the inbox. Without this, every
             // failure reads the same and you have to go digging through a log to
             // learn something as basic as "your API key is out of credit".
-            if let lastWords = Supervisor.lastWords(runs.tailLog(id, lines: 40)) {
+            let tail = runs.tailLog(id, lines: 40)
+            if let lastWords = Supervisor.lastWords(tail) {
                 reason += " — it said: \(lastWords)"
+            }
+            if let diagnosis = Supervisor.diagnose(tail) {
+                reason += "\n\n\(diagnosis)"
             }
             fail(id, note: reason)
             tick()
@@ -657,6 +661,34 @@ public final class Supervisor: @unchecked Sendable {
     private func emitInbox(_ run: Run) {
         let items = Inbox.build(runs: [run], proposals: [])
         for item in items { notifier.notify(item) }
+    }
+
+    /// Turn a handful of failures that are really environment problems into the
+    /// sentence that names the actual cause.
+    ///
+    /// A harness reports what it sees, which is usually a symptom several steps
+    /// downstream. "Credit balance is too low" sends you to a billing page when
+    /// the real story is that the daemon inherited someone else's key and your
+    /// own login was never consulted.
+    static func diagnose(_ log: String) -> String? {
+        let text = log.lowercased()
+        if text.contains("credit balance is too low") || text.contains("insufficient credit") {
+            if text.contains("anthropic_api_key") || text.contains("connectors are disabled") {
+                return "That key came from the environment the daemon was started in, not from "
+                     + "your own login. Restart it from a plain shell (`ouro daemon restart`) "
+                     + "and the agent will use your normal credentials."
+            }
+            return "The account behind the agent's API key is out of credit."
+        }
+        if text.contains("invalid api key") || text.contains("authentication_error") {
+            return "The agent could not authenticate. Check `claude` runs on its own in a "
+                 + "terminal, then `ouro daemon restart`."
+        }
+        if text.contains("command not found") {
+            return "The agent's CLI is not on the daemon's PATH. Start the daemon from a login "
+                 + "shell, or set an absolute path in ~/.ouroboros/config.json."
+        }
+        return nil
     }
 
     /// The last meaningful line an agent printed, stripped of the ANSI noise a

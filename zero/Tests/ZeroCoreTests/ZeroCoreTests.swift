@@ -436,6 +436,38 @@ final class ConfigTests: XCTestCase {
     }
 }
 
+// MARK: - Failure diagnosis
+
+final class DiagnoseTests: XCTestCase {
+    func testInheritedKeyIsNamedAsTheCause() {
+        // The real failure in the field: the daemon was started from inside an agent
+        // session, inherited its key, and every run died pointing at billing.
+        let log = """
+        ⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth
+        source is set and takes precedence over your claude.ai login
+        Credit balance is too low
+        """
+        let text = try! XCTUnwrap(Supervisor.diagnose(log))
+        XCTAssertTrue(text.contains("daemon was started in"))
+        XCTAssertTrue(text.contains("ouro daemon restart"))
+    }
+
+    func testPlainCreditFailureStaysPlain() {
+        let text = try! XCTUnwrap(Supervisor.diagnose("Credit balance is too low"))
+        XCTAssertTrue(text.contains("out of credit"))
+        XCTAssertFalse(text.contains("daemon was started in"))
+    }
+
+    func testMissingCLI() {
+        XCTAssertTrue(try XCTUnwrap(Supervisor.diagnose("zsh: command not found: claude"))
+            .contains("PATH"))
+    }
+
+    func testOrdinaryFailureGetsNoDiagnosis() {
+        XCTAssertNil(Supervisor.diagnose("error: cannot find 'foo' in scope"))
+    }
+}
+
 // MARK: - Merge safety
 
 final class GitMergeSafetyTests: XCTestCase {

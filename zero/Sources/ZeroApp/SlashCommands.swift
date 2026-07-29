@@ -80,6 +80,7 @@ final class SlashRunner: ObservableObject {
 
         case "setup":    await setup(args)
         case "update":   await selfUpdate()
+        case "rebuild":  await rebuildFromSource()
         case "hotkey":   await setHotkey(rest)
         case "health":   await showHealth()
         case "help":     showHelp()
@@ -420,6 +421,41 @@ final class SlashRunner: ObservableObject {
         guard let response = reply.value else { report(reply.text); return }
         report(response.restarting ? "\(response.message) — the daemon is coming back" : response.message)
         model.refresh()
+    }
+
+    /// Rebuild from the working tree and relaunch into it.
+    ///
+    /// The moment after an agent merges a fix into Ouroboros, the running app is
+    /// the version WITHOUT that fix. `/update` would pull first, which is wrong
+    /// here: the code you want is already on disk. This takes it as it stands.
+    ///
+    /// The relaunch is a detached shell, not a Process child, because this app is
+    /// about to die and anything parented to it would die with it.
+    private func rebuildFromSource() async {
+        report("rebuilding from source…")
+        let ok = await Wire.offMain({ () -> Bool in
+            guard let repo = Config.load().repoPath
+                ?? Registry().find("ouroboros")?.path else { return false }
+            let zero = (repo as NSString).appendingPathComponent("zero")
+            let build = Shell.runLine("make install", cwd: zero, timeout: 900)
+            guard build.ok else { return false }
+
+            let app = (zero as NSString).appendingPathComponent("build/Ouroboros Zero.app")
+            let relaunch = "sleep 1; open -g \(Shell.quote(app))"
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            process.arguments = ["-lc", relaunch]
+            try? process.run()
+            return true
+        })
+
+        guard ok else {
+            report("rebuild failed — run `make install` in zero/ to see why")
+            return
+        }
+        report("rebuilt. restarting into it…")
+        try? await Task.sleep(nanoseconds: 900_000_000)
+        NSApplication.shared.terminate(nil)
     }
 
     private func setHotkey(_ raw: String) async {

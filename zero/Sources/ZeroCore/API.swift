@@ -293,6 +293,31 @@ public enum API {
         public init(proposals: [Proposal]) { self.proposals = proposals }
     }
 
+    /// The one number the capture panel puts on its footer: how much work
+    /// Ouroboros has actually done, and how much is in the air right now.
+    ///
+    /// Counted from the runs still on disk, which `RunStore.prune` trims after
+    /// a month — an honest "lately", not a lifetime tally.
+    public struct Stats: Codable, Sendable, Equatable {
+        public var handled: Int
+        public var fixed: Int
+        public var failed: Int
+        public var running: Int
+        /// Issues filed and never dispatched, across the projects on show.
+        public var tasks: Int
+        public var projects: Int
+        /// The last dozen runs' statuses, oldest first — a tape you can read
+        /// at a glance without reading a single word.
+        public var tape: [RunStatus]
+
+        public init(handled: Int = 0, fixed: Int = 0, failed: Int = 0, running: Int = 0,
+                    tasks: Int = 0, projects: Int = 0, tape: [RunStatus] = []) {
+            self.handled = handled; self.fixed = fixed; self.failed = failed
+            self.running = running; self.tasks = tasks; self.projects = projects
+            self.tape = tape
+        }
+    }
+
     /// One call the menu-bar app makes on every open: everything the panel needs.
     public struct Snapshot: Codable, Sendable {
         public var health: HealthDTO
@@ -300,18 +325,33 @@ public enum API {
         public var inbox: [InboxItem]
         public var activeRuns: [Run]
         public var recentRuns: [Run]
-        /// Projects you have pointed Ouroboros at, newest first.
-        public var recentUsed: [Project]
-        /// Projects you have been committing to, newest first, with anything
-        /// already in `recentUsed` removed so the two lists never repeat.
-        public var recentByGit: [Project]
+        /// The projects worth offering you, richest first: the ones you have
+        /// pointed Ouroboros at, then the ones you have been committing to.
+        public var recents: [ProjectDigest]
+        public var stats: Stats
 
         public init(health: HealthDTO, projects: [Project], inbox: [InboxItem],
                     activeRuns: [Run], recentRuns: [Run],
-                    recentUsed: [Project] = [], recentByGit: [Project] = []) {
+                    recents: [ProjectDigest] = [], stats: Stats = Stats()) {
             self.health = health; self.projects = projects; self.inbox = inbox
             self.activeRuns = activeRuns; self.recentRuns = recentRuns
-            self.recentUsed = recentUsed; self.recentByGit = recentByGit
+            self.recents = recents; self.stats = stats
+        }
+
+        // A daemon that has not been restarted since the app was updated is a
+        // normal state on a machine where both are built from the same
+        // checkout. Decoding what it does send, rather than failing the whole
+        // snapshot on a missing key, keeps that mismatch to an empty drawer
+        // instead of a panel that says it cannot see the daemon at all.
+        public init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            health = try c.decode(HealthDTO.self, forKey: .health)
+            projects = try c.decodeIfPresent([Project].self, forKey: .projects) ?? []
+            inbox = try c.decodeIfPresent([InboxItem].self, forKey: .inbox) ?? []
+            activeRuns = try c.decodeIfPresent([Run].self, forKey: .activeRuns) ?? []
+            recentRuns = try c.decodeIfPresent([Run].self, forKey: .recentRuns) ?? []
+            recents = try c.decodeIfPresent([ProjectDigest].self, forKey: .recents) ?? []
+            stats = try c.decodeIfPresent(Stats.self, forKey: .stats) ?? Stats()
         }
     }
 }

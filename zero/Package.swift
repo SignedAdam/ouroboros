@@ -41,6 +41,7 @@ let package = Package(
                 .product(name: "Ouroboros", package: "swift"),
                 .product(name: "OuroborosUI", package: "swift"),
             ],
+            resources: [.process("Resources")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .testTarget(

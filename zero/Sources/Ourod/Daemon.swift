@@ -15,6 +15,7 @@ final class Daemon: @unchecked Sendable {
     let events = EventBus()
     let notifier: Notifier
     let supervisor: Supervisor
+    let digests = Digests()
     let startedAt = Date()
 
     private var server: HTTPServer?
@@ -770,16 +771,42 @@ final class Daemon: @unchecked Sendable {
 
     func snapshot() -> API.Snapshot {
         let all = runs.all()
-        let used = registry.recentlyUsed(limit: 5)
+        let recents = recentProjects().map { digests.digest($0, runs: all) }
         return API.Snapshot(
             health: health(),
             projects: registry.all(),
             inbox: inbox(),
             activeRuns: all.filter { $0.status.isActive },
             recentRuns: Array(all.filter { $0.status.isTerminal }.prefix(12)),
-            recentUsed: used,
-            recentByGit: registry.recentlyTouchedByGit(
-                limit: 5, excluding: Set(used.map(\.id))))
+            recents: recents,
+            stats: API.Stats(
+                handled: all.count,
+                fixed: all.filter { $0.status == .succeeded }.count,
+                failed: all.filter { $0.status == .failed }.count,
+                running: all.filter { $0.status.isActive && $0.status != .queued }.count,
+                tasks: recents.reduce(0) { $0 + $1.taskCount },
+                projects: registry.all().count,
+                // Oldest first: a tape is read left to right, and the newest
+                // run belongs at the end where the eye lands.
+                tape: Array(all.prefix(12)).reversed().map(\.status)))
+    }
+
+    /// Two kinds of recent, in one list. What you have pointed Ouroboros at
+    /// comes first — that is the picker's real job — and what you have been
+    /// committing to follows, so a repo Ouroboros has never touched is still
+    /// one click away the moment it becomes the thing you are working on.
+    ///
+    /// Directories that have since been deleted are dropped: a recents list is
+    /// a set of offers, and offering something that isn't there is a bug.
+    private func recentProjects() -> [Project] {
+        let fm = FileManager.default
+        let used = registry.recentlyUsed(limit: 5)
+            .filter { fm.fileExists(atPath: $0.path) }
+            .prefix(4)
+        let byGit = registry.recentlyTouchedByGit(limit: 4, excluding: Set(used.map(\.id)))
+            .filter { fm.fileExists(atPath: $0.path) }
+            .prefix(3)
+        return Array(used) + Array(byGit)
     }
 
     private func eventStream() -> HTTPResponse {

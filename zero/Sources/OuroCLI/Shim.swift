@@ -82,6 +82,7 @@ enum Shim {
         }
         process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         var env = ProcessInfo.processInfo.environment
+        Shim.scrubInheritedSession(&env)
         env["OUROBOROS_HOME"] = home
         env["OUROBOROS_RUN_ID"] = runId
         env["OUROBOROS_RESULT_FILE"] = (runDir as NSString).appendingPathComponent("result.json")
@@ -120,6 +121,39 @@ enum Shim {
 
         outro(runDir: runDir, exitCode: code)
         exit(code)
+    }
+
+    /// Strip the calling agent session out of the environment before handing it
+    /// to a fresh agent.
+    ///
+    /// Ouroboros is meant to be installed and started BY an agent, so the daemon
+    /// is routinely launched from inside one. Everything that session exported
+    /// then flows down: its `ANTHROPIC_API_KEY` overrides the user's own
+    /// claude.ai login, and its `CLAUDE_CODE_*` variables make the new agent
+    /// believe it is a continuation of a session that has nothing to do with it.
+    /// A stale or empty key here fails every single run, with an error about
+    /// credit that points nowhere near the cause.
+    ///
+    /// `CLAUDECODE` is the tell. If it is set, these credentials belong to a
+    /// parent agent rather than to the user, so they go. If it is absent the
+    /// daemon was started normally and a deliberately configured key is left
+    /// exactly where it is.
+    static func scrubInheritedSession(_ env: inout [String: String]) {
+        let insideAgentSession = env["CLAUDECODE"] != nil
+            || env["CLAUDE_CODE_SESSION_ID"] != nil
+            || env["CLAUDE_CODE_ENTRYPOINT"] != nil
+
+        for key in env.keys where key.hasPrefix("CLAUDE_CODE_") || key.hasPrefix("CLAUDE_JOB") {
+            env.removeValue(forKey: key)
+        }
+        for key in ["CLAUDECODE", "CLAUDE_PID", "CLAUDE_EFFORT"] {
+            env.removeValue(forKey: key)
+        }
+        guard insideAgentSession else { return }
+        for key in ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL",
+                    "ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL"] {
+            env.removeValue(forKey: key)
+        }
     }
 
     private static func report(_ client: ZeroClient, _ runId: String, _ phase: String,

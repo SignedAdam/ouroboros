@@ -90,6 +90,11 @@ public enum SlashCommands {
                      summary: "find and adopt your projects"),
         SlashCommand(name: "update", aliases: ["upgrade"], argHint: "",
                      summary: "pull and rebuild ouroboros itself"),
+        // Distinct from /update, which pulls first. /rebuild takes the source
+        // exactly as it stands on disk, which is what you want the moment an
+        // agent has merged a fix into it and you want to be running that fix.
+        SlashCommand(name: "rebuild", aliases: [], argHint: "from source",
+                     summary: "rebuild from the code on disk and restart"),
         SlashCommand(name: "hotkey", aliases: [], argHint: "<combo>",
                      summary: "the global capture shortcut"),
         SlashCommand(name: "health", aliases: ["daemon"], argHint: "",

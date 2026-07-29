@@ -19,12 +19,12 @@ final class AppModel: ObservableObject {
     private var timer: Timer?
 
     var projects: [Project] { snapshot?.projects ?? [] }
-    var recentUsed: [Project] { snapshot?.recentUsed ?? [] }
-    var recentByGit: [Project] { snapshot?.recentByGit ?? [] }
+    var recents: [ProjectDigest] { snapshot?.recents ?? [] }
+    var stats: API.Stats { snapshot?.stats ?? API.Stats() }
 
-    /// Fold state for the capture panel's recents section. A UI preference, so
-    /// it lives in UserDefaults rather than config.json, which is the daemon's
-    /// contract with every client.
+    /// Fold state for the capture panel's drawer. A UI preference, so it lives
+    /// in UserDefaults rather than config.json, which is the daemon's contract
+    /// with every client.
     var recentsExpanded: Bool {
         get {
             UserDefaults.standard.object(forKey: "recentsExpanded") as? Bool ?? true
@@ -66,6 +66,8 @@ final class AppModel: ObservableObject {
                 if let result {
                     self.snapshot = result
                     self.connected = true
+                    // Terminal runs the app has not announced yet get a toast.
+                    ToastCenter.shared.observe(result.recentRuns + result.activeRuns)
                 } else {
                     self.connected = false
                 }

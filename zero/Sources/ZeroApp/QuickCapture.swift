@@ -137,21 +137,24 @@ final class QuickCaptureController: NSObject, NSWindowDelegate {
     // MARK: - panel
 
     private func makePanel() -> NSPanel {
+        // Borderless, never `.titled`. A titled window draws AppKit's own theme
+        // frame *over* the content: a near-white 1px hairline that reads as a
+        // bright line across the top edge. It survives a hidden title, a
+        // transparent titlebar and a clear background, because it belongs to the
+        // frame rather than to anything we draw. Borderless has no theme frame,
+        // so the only edge left is the orange stroke the view puts there on
+        // purpose. `KeyablePanel` already overrides `canBecomeKey`, which is what
+        // a borderless panel needs in order to take the keyboard.
         let panel = KeyablePanel(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 150),
-            styleMask: [.titled, .fullSizeContentView, .nonactivatingPanel],
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered, defer: false)
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
         panel.level = .floating
         // We dismiss on resignKey ourselves; letting AppKit hide the panel on
         // deactivate as well would snatch it away mid-fade.
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.standardWindowButton(.closeButton)?.isHidden = true
-        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
-        panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.backgroundColor = .clear
         panel.delegate = self
 
@@ -232,9 +235,15 @@ final class QuickCaptureController: NSObject, NSWindowDelegate {
     private func recentre(_ panel: NSPanel, on screen: NSScreen?) {
         guard let frame = screen?.visibleFrame else { return }
         let size = panel.frame.size
+        // Launcher height: a little above the middle, not the middle. The panel
+        // then grows *downward* from wherever its top edge lands, so the only
+        // thing that has to be clamped is a panel tall enough — drawer open,
+        // several lines typed — to poke out of the top of the screen.
+        let wanted = frame.midY + frame.height * 0.12
+        let headroom = frame.maxY - 12 - size.height
         panel.setFrameOrigin(NSPoint(
             x: frame.midX - size.width / 2,
-            y: frame.midY + frame.height * 0.12))
+            y: max(frame.minY + 12, min(wanted, headroom))))
     }
 
     private func followActiveScreen() {
@@ -304,7 +313,6 @@ struct QuickCaptureView: View {
     @ObservedObject var chrome: CaptureChrome
     @StateObject private var slash: SlashRunner
     var onClose: () -> Void
-    @FocusState private var focused: Bool
     @State private var flash: String?
     @State private var flashIsError = false
 
@@ -329,18 +337,47 @@ struct QuickCaptureView: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            // Above the drawer, so the panel's own edge covers the drawer's
+            // first row of pixels and the two read as one joined object.
+            card.zIndex(1)
+
+            // A slash command is a different mode: the palette answers the
+            // question the drawer would have answered.
+            if matches.isEmpty {
+                ProjectsDrawer(model: model, expanded: model.recentsExpanded) {
+                    withAnimation(.easeOut(duration: 0.15)) { model.recentsExpanded.toggle() }
+                }
+                .padding(.top, -1)
+            }
+        }
+        .frame(width: 560)
+        .scaleEffect(chrome.scale)
+        .onAppear { model.refresh() }
+        .onChange(of: model.draft) { _, _ in
+            if chrome.slashSelection != 0 { chrome.slashSelection = 0 }
+        }
+        .onChange(of: slash.wizard?.id) { _, id in chrome.modalOpen = id != nil }
+        .sheet(item: $slash.wizard) { request in
+            ProjectWizardSheet(request: request, model: model, onClose: { slash.wizard = nil })
+        }
+    }
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
                 OuroborosMark()
                     .foregroundStyle(ouroOrange)
                     .frame(width: 22, height: 22)
+                    .padding(.top, 1)
 
-                TextField("what's wrong?", text: $model.draft, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 19, weight: .regular, design: .rounded))
-                    .lineLimit(1...4)
-                    .focused($focused)
-                    .onSubmit { submit(fix: false) }
+                GrowingField(text: $model.draft,
+                             placeholder: "what's wrong?",
+                             font: .rounded(19),
+                             maxLines: 7,
+                             focusToken: chrome.focusToken,
+                             onSubmit: { submit(fix: false) })
+                    .frame(maxWidth: .infinity)
             }
             .padding(.horizontal, 18)
             .padding(.top, 18)
@@ -352,8 +389,6 @@ struct QuickCaptureView: View {
                 SlashPalette(matches: matches, selection: selection)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 10)
-            } else {
-                recents
             }
 
             Divider().opacity(0.5)
@@ -409,95 +444,11 @@ struct QuickCaptureView: View {
                 .keyboardShortcut(.return, modifiers: .command)
                 .opacity(0).frame(width: 0, height: 0)
         }
-        .frame(width: 560)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(ouroOrange.opacity(0.25), lineWidth: 1))
-        .scaleEffect(chrome.scale)
-        .onAppear { focused = true; model.refresh() }
-        .onChange(of: chrome.focusToken) { _, _ in focused = true }
-        .onChange(of: model.draft) { _, _ in
-            if chrome.slashSelection != 0 { chrome.slashSelection = 0 }
-        }
-        .onChange(of: slash.wizard?.id) { _, id in chrome.modalOpen = id != nil }
-        .sheet(item: $slash.wizard) { request in
-            ProjectWizardSheet(request: request, model: model, onClose: { slash.wizard = nil })
-        }
-    }
-
-    // MARK: - recents
-
-    /// Two lists, because "recent" means two different things. The first is what
-    /// you have pointed Ouroboros at. The second is what you have been committing
-    /// to, which is how a repo you have never filed against still shows up the
-    /// moment it becomes the thing you are working on.
-    private var recents: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(.easeOut(duration: 0.12)) { model.recentsExpanded.toggle() }
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 8, weight: .bold))
-                        .rotationEffect(.degrees(model.recentsExpanded ? 90 : 0))
-                    Text("RECENT PROJECTS")
-                        .font(.system(size: 9, weight: .semibold))
-                        .kerning(0.8)
-                    Spacer()
-                }
-                .foregroundStyle(.tertiary)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 18)
-            .padding(.bottom, model.recentsExpanded ? 6 : 12)
-
-            if model.recentsExpanded {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(model.recentUsed) { projectRow($0) }
-
-                    if !model.recentByGit.isEmpty {
-                        Text("by git activity")
-                            .font(.system(size: 9))
-                            .foregroundStyle(.quaternary)
-                            .padding(.horizontal, 18)
-                            .padding(.top, model.recentUsed.isEmpty ? 0 : 6)
-                            .padding(.bottom, 2)
-                        ForEach(model.recentByGit) { projectRow($0) }
-                    }
-
-                    if model.recentUsed.isEmpty && model.recentByGit.isEmpty {
-                        Text("nothing yet. /add a directory")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 18)
-                    }
-                }
-                .padding(.bottom, 10)
-            }
-        }
-    }
-
-    private func projectRow(_ project: Project) -> some View {
-        let selected = project.id == model.selectedProject?.id
-        return Button {
-            model.selectedProjectId = project.id
-        } label: {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(selected ? ouroOrange : Color.secondary.opacity(0.3))
-                    .frame(width: 5, height: 5)
-                Text(project.name)
-                    .font(.system(size: 12, weight: selected ? .semibold : .regular))
-                Spacer()
-            }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 3)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
     }
 
     private func submit(fix: Bool) {
