@@ -49,6 +49,24 @@ final class AppModel: ObservableObject {
         activeRuns.filter { $0.status != .queued }.count
     }
 
+    /// The ring ⇥ walks in the capture panel, most recent first.
+    ///
+    /// The drawer's list rather than the whole registry, on purpose: tabbing
+    /// through sixty projects when seven are on screen would move a selection
+    /// nobody can see. `recents` is empty only before the first snapshot lands
+    /// (or against a daemon too old to send them), and the registry is already
+    /// sorted by last use, so the fallback is the same order minus the git half.
+    var switchOrder: [String] {
+        recents.isEmpty ? projects.map(\.id) : recents.map(\.id)
+    }
+
+    /// ⇥ forward, ⇧⇥ back. Silent when there is nowhere to go.
+    func cycleProject(by steps: Int) {
+        guard let next = ProjectCycle.step(from: selectedProject?.id,
+                                           in: switchOrder, by: steps) else { return }
+        selectedProjectId = next
+    }
+
     func start() {
         refresh()
         // Cheap: a unix-socket round trip against a local process. Polling keeps
