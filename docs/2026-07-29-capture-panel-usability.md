@@ -72,7 +72,7 @@ gives the full set.
 - [x] **A5 — Jobs are objects.** Each job row: hover = peek button, right-click =
       Resume conversation · Open log · Open worktree · Open diff · Stop · Retry ·
       Acknowledge.
-- [ ] **A6 — Three sections, cleanly separated.** Favourites, in Ouroboros, git
+- [x] **A6 — Three sections, cleanly separated.** Favourites, in Ouroboros, git
       activity. A project appears exactly once, in the highest section that claims
       it.
 
@@ -93,7 +93,7 @@ gives the full set.
       *merging*, not a property of a job. Where it appears at all it reads
       `auto-merge` / `assists`, and it is in the context menu where it can be
       changed rather than floating next to a name.
-- [ ] **C2 — Every glyph is explained.** Help tooltips on the run tape, the counts,
+- [x] **C2 — Every glyph is explained.** Help tooltips on the run tape, the counts,
       the section headers, the agent chip.
 
 ### D. Choose the harness

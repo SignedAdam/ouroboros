@@ -118,14 +118,43 @@ struct ProjectsDrawer: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
             } else {
-                ForEach(model.recents) { digest in
-                    ProjectRow(digest: digest,
-                               selected: digest.id == model.selectedProject?.id,
-                               onSelect: { model.selectedProjectId = digest.id })
+                // Three kinds of "recent", and conflating them was the original
+                // sin here: a repo you have merely committed to is not a repo
+                // Ouroboros works on. Each project appears exactly once, in the
+                // highest section that claims it — the daemon decides which,
+                // so the app cannot disagree with the CLI about it.
+                ForEach(ProjectSection.ordered, id: \.self) { section in
+                    let members = model.recents.filter { $0.section == section }
+                    if !members.isEmpty {
+                        sectionHeader(section)
+                        ForEach(members) { digest in
+                            ProjectRow(digest: digest,
+                                       selected: digest.id == model.selectedProject?.id,
+                                       onSelect: { model.selectedProjectId = digest.id })
+                        }
+                    }
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 3)
+    }
+
+    /// Twelve points tall, and it earns them by answering "why is this here?"
+    private func sectionHeader(_ section: ProjectSection) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: section.glyph)
+                .font(.system(size: 7, weight: .bold))
+            Text(section.label)
+                .font(.system(size: 8, weight: .semibold))
+                .kerning(0.8)
+            Spacer()
+        }
+        .foregroundStyle(.quaternary)
+        .padding(.leading, 13)
+        .padding(.trailing, 13)
+        .padding(.top, 5)
+        .padding(.bottom, 2)
+        .help(section.explanation)
     }
 
     // MARK: the surface

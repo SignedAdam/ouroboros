@@ -71,13 +71,43 @@ public struct TaskPip: Codable, Sendable, Equatable, Identifiable {
 
 /// Which of the drawer's three lists a project belongs to. Assigned by the
 /// daemon so the app never has to re-derive it and get a different answer.
-public enum ProjectSection: String, Codable, Sendable {
+public enum ProjectSection: String, Codable, Sendable, CaseIterable {
     /// Pinned by hand. Always shown, however cold.
     case favourite
     /// Ouroboros has been used here — issues filed, agents run.
     case ouroboros
     /// Only git says anything happened. Never filed against.
     case git
+
+    /// Top to bottom, most deliberate first.
+    public static var ordered: [ProjectSection] { [.favourite, .ouroboros, .git] }
+
+    public var label: String {
+        switch self {
+        case .favourite: return "FAVOURITES"
+        case .ouroboros: return "IN OUROBOROS"
+        case .git:       return "GIT ACTIVITY"
+        }
+    }
+
+    public var glyph: String {
+        switch self {
+        case .favourite: return "star.fill"
+        case .ouroboros: return "circle.hexagonpath"
+        case .git:       return "arrow.triangle.branch"
+        }
+    }
+
+    public var explanation: String {
+        switch self {
+        case .favourite:
+            return "Pinned by you. These stay here however long it has been."
+        case .ouroboros:
+            return "You have filed or fixed something here through Ouroboros."
+        case .git:
+            return "You have been committing here, but Ouroboros has never run in it."
+        }
+    }
 }
 
 /// One project, as the capture panel needs it: what happened here last, what
