@@ -196,19 +196,32 @@ final class QuickCaptureController: NSObject, NSWindowDelegate {
         case kVK_Escape:
             hide()
             return nil
-        case kVK_UpArrow, kVK_DownArrow, kVK_Tab:
+        case kVK_UpArrow, kVK_DownArrow:
             return slashNavigation(event)
+        case kVK_Tab:
+            // The palette gets first claim on ⇥: finishing the command you are
+            // half-way through typing beats switching project under it. The rest
+            // of the time — which is nearly always — ⇥ walks the drawer, so the
+            // project a capture lands in is one key away instead of a trip to
+            // the folder menu with the mouse. ⇧⇥ walks back up.
+            if paletteIsUp { return slashNavigation(event) }
+            model.cycleProject(by: event.modifierFlags.contains(.shift) ? -1 : 1)
+            return nil
         default:
             return event
         }
     }
 
+    /// The slash palette is on screen, so it owns the navigation keys.
+    private var paletteIsUp: Bool {
+        model.draft.hasPrefix("/") && !SlashCommands.suggestions(for: model.draft).isEmpty
+    }
+
     /// Only swallows the key when the palette is actually up — Tab and the
     /// arrows have to keep their normal meaning the rest of the time.
     private func slashNavigation(_ event: NSEvent) -> NSEvent? {
-        guard model.draft.hasPrefix("/") else { return event }
+        guard paletteIsUp else { return event }
         let matches = SlashCommands.suggestions(for: model.draft)
-        guard !matches.isEmpty else { return event }
 
         let current = min(max(0, chrome.slashSelection), matches.count - 1)
         switch Int(event.keyCode) {
@@ -450,6 +463,10 @@ struct QuickCaptureView: View {
                 if matches.isEmpty {
                     Text("⏎ file").font(.system(size: 10)).foregroundStyle(.secondary)
                     Text("⌘⏎ file & fix").font(.system(size: 10)).foregroundStyle(ouroOrange)
+                    // Only worth a slot when there is somewhere to tab to.
+                    if model.switchOrder.count > 1 {
+                        Text("⇥ project").font(.system(size: 10)).foregroundStyle(.secondary)
+                    }
                     Text("/ commands").font(.system(size: 10)).foregroundStyle(.secondary)
                 } else {
                     Text("⏎ run").font(.system(size: 10)).foregroundStyle(ouroOrange)
