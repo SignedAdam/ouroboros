@@ -438,24 +438,24 @@ enum Commands {
         }
         print("")
         print("  \(Fmt.glyph(run.status)) \(Ansi.bold(run.title))")
-        print("    " + Ansi.dim(Ansi.pad("run", 12)) + run.id)
-        print("    " + Ansi.dim(Ansi.pad("project", 12)) + run.projectName)
-        print("    " + Ansi.dim(Ansi.pad("agent", 12)) + run.agent)
-        print("    " + Ansi.dim(Ansi.pad("status", 12)) + Fmt.status(run.status))
+        print("    " + Ansi.dim(Ansi.pad("run", 14)) + run.id)
+        print("    " + Ansi.dim(Ansi.pad("project", 14)) + run.projectName)
+        print("    " + Ansi.dim(Ansi.pad("agent", 14)) + run.agent)
+        print("    " + Ansi.dim(Ansi.pad("status", 14)) + Fmt.status(run.status))
         if let branch = run.branch {
-            print("    " + Ansi.dim(Ansi.pad("branch", 12)) + branch + Ansi.dim(" from \(run.base)"))
+            print("    " + Ansi.dim(Ansi.pad("branch", 14)) + branch + Ansi.dim(" from \(run.base)"))
         }
         if let worktree = run.worktreePath {
-            print("    " + Ansi.dim(Ansi.pad("worktree", 12)) + worktree)
+            print("    " + Ansi.dim(Ansi.pad("worktree", 14)) + worktree)
         }
         if let session = run.sessionId {
-            print("    " + Ansi.dim(Ansi.pad("conversation", 12)) + session)
-            print("    " + Ansi.dim(Ansi.pad("", 12) + "reopen it: ouro resume \(run.id)"))
+            print("    " + Ansi.dim(Ansi.pad("conversation", 14)) + session)
+            print("    " + Ansi.dim(Ansi.pad("", 14) + "reopen it: ouro resume \(run.id)"))
         } else {
-            print("    " + Ansi.dim(Ansi.pad("conversation", 12) + "not recorded"))
+            print("    " + Ansi.dim(Ansi.pad("conversation", 14) + "not recorded"))
         }
         if let note = run.note, !note.isEmpty {
-            print("    " + Ansi.dim(Ansi.pad("note", 12)) + Fmt.truncate(note, 60))
+            print("    " + Ansi.dim(Ansi.pad("note", 14)) + Fmt.truncate(note, 60))
         }
         print("")
     }

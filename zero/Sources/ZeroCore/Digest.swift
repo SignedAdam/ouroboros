@@ -36,10 +36,13 @@ public struct RunPip: Codable, Sendable, Equatable, Identifiable {
     public var canResume: Bool
     public var worktreePath: String?
     public var branch: String?
+    /// How many runs this line stands for. The newest is the one shown; a
+    /// second attempt at the same issue is the same story, not a second one.
+    public var attempts: Int
 
     public init(id: String, status: RunStatus, title: String, at: Date, seconds: Int? = nil,
                 agent: String = "", sessionId: String? = nil, canResume: Bool = false,
-                worktreePath: String? = nil, branch: String? = nil) {
+                worktreePath: String? = nil, branch: String? = nil, attempts: Int = 1) {
         self.id = id
         self.status = status
         self.title = title
@@ -50,6 +53,7 @@ public struct RunPip: Codable, Sendable, Equatable, Identifiable {
         self.canResume = canResume
         self.worktreePath = worktreePath
         self.branch = branch
+        self.attempts = attempts
     }
 }
 
@@ -270,15 +274,28 @@ public final class Digests: @unchecked Sendable {
         let dispatched = Set(mine.compactMap { $0.issuePath.map(Registry.normalize) })
         let waiting = facts.open.filter { !dispatched.contains(Registry.normalize($0.path)) }
 
-        let jobs = mine.prefix(4).map { run in
-            RunPip(id: run.id, status: run.status, title: run.title,
-                   at: run.endedAt ?? run.startedAt ?? run.queuedAt,
-                   seconds: run.duration.map { Int($0) },
-                   agent: run.agent,
-                   sessionId: run.sessionId,
-                   canResume: run.sessionId != nil && resumable(run),
-                   worktreePath: run.worktreePath,
-                   branch: run.branch)
+        // One line per piece of work, not per attempt. Retrying an issue three
+        // times is one story with three chapters; showing it as three identical
+        // titles stacked reads as a rendering bug, which is how it was reported.
+        var seen: [String: Int] = [:]
+        var jobs: [RunPip] = []
+        for run in mine {
+            let key = run.issuePath.map(Registry.normalize) ?? run.id
+            if let index = seen[key] {
+                jobs[index].attempts += 1
+                continue
+            }
+            seen[key] = jobs.count
+            jobs.append(RunPip(
+                id: run.id, status: run.status, title: run.title,
+                at: run.endedAt ?? run.startedAt ?? run.queuedAt,
+                seconds: run.duration.map { Int($0) },
+                agent: run.agent,
+                sessionId: run.sessionId,
+                canResume: run.sessionId != nil && resumable(run),
+                worktreePath: run.worktreePath,
+                branch: run.branch))
+            if jobs.count == 4 { break }
         }
 
         let handled = project.lastUsed != nil || !mine.isEmpty || facts.lastIssue != nil

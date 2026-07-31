@@ -120,10 +120,10 @@ struct TaskRow: View {
     @State private var hovering = false
 
     var body: some View {
+        // No bullet. The section's hairline already says these rows belong
+        // together, and a dot in front of every line is exactly the decoration
+        // this redesign exists to remove.
         HStack(spacing: 6) {
-            Circle()
-                .fill(Color.secondary.opacity(0.45))
-                .frame(width: 3, height: 3)
             Text(task.title)
                 .font(.system(size: 10))
                 .foregroundStyle(hovering ? Color.primary : Color.secondary)
@@ -148,6 +148,8 @@ struct TaskRow: View {
 /// One run, as a row you can act on.
 struct JobRow: View {
     let run: Run
+    /// How many runs this row stands for — see `RunPip.attempts`.
+    var attempts: Int = 1
     @EnvironmentObject var model: AppModel
     @State private var hovering = false
 
@@ -161,6 +163,12 @@ struct JobRow: View {
                 .foregroundStyle(hovering ? Color.primary : Color.secondary)
                 .lineLimit(1)
             Spacer(minLength: 4)
+            if attempts > 1 {
+                Text("×\(attempts)")
+                    .font(.system(size: 8, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                    .help("\(attempts) attempts at this issue; the newest is shown")
+            }
             Text(run.agent)
                 .font(.system(size: 8))
                 .foregroundStyle(.tertiary)

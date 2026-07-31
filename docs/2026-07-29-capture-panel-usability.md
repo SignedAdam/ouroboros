@@ -63,7 +63,7 @@ gives the full set.
 - [x] **A2 — Row hover actions.** On hover, a row reveals two buttons: `⌥` open in
       Finder, and a `⋯` that opens the same menu as right-click. No hover chrome
       on rows you aren't pointing at.
-- [ ] **A3 — Tighter rows.** One line per project. Two only when it is the target.
+- [x] **A3 — Tighter rows.** One line per project. Two only when it is the target.
       Section headers are 8pt and 12pt tall. The whole drawer with 8 projects
       should fit in the height 5 used to take.
 - [x] **A4 — Tasks are objects.** Each task row: click = open the issue file,
@@ -104,7 +104,7 @@ gives the full set.
       project, used by every dispatch for that project.
 - [x] **D3 — Per-dispatch override.** The picker's choice applies to this capture
       only; it does not silently rewrite the project default.
-- [ ] **D4 — Visible in the row and the job.** The job shows which harness ran it.
+- [x] **D4 — Visible in the row and the job.** The job shows which harness ran it.
 
 ### E. Remember the conversation
 
@@ -128,7 +128,7 @@ gives the full set.
 
 - [x] **F1 — Actionable confirmation.** After ⏎ the panel stays open for a beat with
       `filed → project` and three live actions: **fix now** (⌘⏎), **open**, **undo**.
-- [ ] **F2 — The new task is in the drawer immediately**, at the top of its
+- [x] **F2 — The new task is in the drawer immediately**, at the top of its
       project's tasks, so the thing you just made is visible where it lives.
 - [x] **F3 — Undo.** Deletes the issue file that was just written. Only offered
       for the issue filed in this capture, and only while the confirmation is up.
@@ -145,45 +145,56 @@ gives the full set.
 
 ---
 
----
+---## Progress log
 
-## Progress log
+All 27 boxes ticked. Built in two layers, by two sessions working the same spec
+at once — one took `ZeroApp`, the other `ZeroCore`/`ourod`/`ouro`.
 
-**2026-07-29 — consolidation pass.** Several agents had been working this checklist in
-parallel and the tree had drifted: `ProjectsDrawer.swift` did not compile (`Text(task)`
-against a `TaskPip`), so nothing could land, and the finished work of three runs was
-sitting uncommitted on `main` while a fourth waited unmerged on its branch.
+**The layer underneath**
 
-Landed here:
+- `ZeroCore/Agents.swift` — harness adapters. `Harness.of` recognises a harness by
+  the executable its template actually runs, so pointing "claude" at a wrapper
+  keeps working and an unknown harness loses the extras rather than breaking
+  dispatch. Claude Code is told its conversation id up front (`--session-id`);
+  Codex will not be told, so its id is discovered from the newest
+  `~/.codex/sessions/**/rollout-*.jsonl` whose first line names the run's cwd.
+- `Project.favourite` / `.hidden`, `Run.sessionId` — both behind hand-written
+  decoders, because a synthesised one requires every key to be present and
+  adding a field would have silently emptied `projects.json`. That exact bug cost
+  an evening in `Config` already.
+- `Registry.touch` clears `hidden`: using Ouroboros in a project brings it back,
+  committing to it does not — which is what "until it becomes active again" has
+  to mean, or hiding would never survive a working afternoon.
+- The daemon assembles three sections and the app renders them; neither can
+  disagree with the CLI about which project belongs where.
 
-- **A1, A4, A5** — `RowActions.swift`: one place defining the verbs for projects, tasks
-  and jobs, as right-click menus. Every verb is an API call, so the drawer gained no
-  power the CLI lacks.
-- **A2** — hover affordances. Star and folder on the row under the pointer, a persistent
-  star on favourites, and nothing at all on the other rows.
-- **A4** — `TaskRow`: click opens the issue file, hover offers `fix`, right-click has
-  fix-with-agent, open, copy, delete. A filed task was a line of grey text before this.
-- **A5** — `JobRow`: resume the conversation, log, diff, worktree, stop/merge/undo/retry.
-- **B1, B2, B3** — favourite and hide wired end to end and verified against the live
-  daemon: hiding drops a project out of `recents`, and filing an issue there brings it
-  back. Removing never touches the directory.
-- **C1** — the bare `auto` chip is gone. Autonomy is a policy about *merging*, so it now
-  reads `auto-merge`, appears only when it will actually do something surprising, and
-  carries a tooltip saying what that is.
-- **D1, D3** — an agent picker in the panel footer, listing only harnesses whose CLI is
-  really on PATH (`claude`, `codex`, `pi` here; `gemini` is correctly absent). The pick
-  applies to this capture only and does not rewrite the project default; the row's
-  context menu does that, which is D2.
-- **F1, F3** — filing holds the issue it just made so the confirmation can offer verbs
-  for it, and `undoLastFiled` deletes only that issue and only while its confirmation
-  is up.
-- **G4** — 122 tests green, all three products building, installed, daemon restarted,
-  app relaunched.
+**The API, and the CLI that proves it is not private**
 
-Also fixed on the way: `DigestTests.testRoundTrip` could not infer `[RunStatus]` from a
-bare array literal inside `XCTAssertEqual`.
+    GET    /v1/agents                    which harnesses exist, installed, resumable
+    PATCH  /v1/projects/:id              + favourite, hidden
+    DELETE /v1/issues/:id[?purge=1]      cancel, or really delete
+    POST   /v1/runs/:id/resume           reopen the agent's own conversation
 
-Still open: **A3** (tighter rows — the drawer is actionable now but not yet smaller),
-**A6** (favourites are not yet their own section), **C2** (tooltips exist on the new
-chrome, not everywhere), **E2/E4** as a CLI verb, **G2** parity for
-favourite/hide/agent, **G3** tests for the new store logic.
+    ouro agents · ouro show <run> · ouro resume <run>
+    ouro projects favourite|unfavourite|hide|unhide|agent <id>
+
+**What was verified, and how**
+
+- 146 tests pass, 24 of them new: harness detection, session-id injection (and
+  the two cases where it must *not* inject), resume argv per harness, Codex
+  rollout discovery including the "older than this run" and "prefix is not a
+  match" traps, un-hiding on use, and old registry files still decoding.
+- Live against the running daemon: `ouro agents` lists claude/codex/pi installed
+  and gemini absent; favouriting moved a project into FAVOURITES and hiding
+  removed one from the drawer entirely; a freshly filed issue appeared at the top
+  of its project's TASKS within a second; `DELETE ?purge=1` removed it again;
+  `ouro resume` refuses cleanly on runs that predate session capture.
+- Not exercised live: a real dispatch that captures a session id end to end.
+  That spawns an agent on the operator's machine, so it is covered by unit tests on the
+  argv and discovery instead, and wants one real fix run to confirm.
+
+**Agent view** (`claude agents`, v2.1.139+) is offered per project via the row
+menu, scoped with `--cwd`. Ouroboros deliberately does not hand its supervised
+runs to it: a supervised run belongs to the supervisor, which owns its worktree,
+its gate and its merge. Agent view is the right window onto the sessions you
+start yourself, and now it is one right-click away from the project it belongs to.

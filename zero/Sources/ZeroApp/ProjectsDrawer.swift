@@ -86,6 +86,8 @@ struct ProjectsDrawer: View {
             }
             if !stats.tape.isEmpty {
                 RunTape(tape: stats.tape)
+                    .help("the last \(stats.tape.count) agent runs across every project, "
+                          + "oldest first — green landed, red failed, orange is live")
             }
             if stats.handled > 0 {
                 HStack(spacing: 3) {
@@ -96,6 +98,8 @@ struct ProjectsDrawer: View {
                         .font(.system(size: 9))
                         .foregroundStyle(.quaternary)
                 }
+                .help("\(stats.handled) runs dispatched · \(stats.fixed) landed · "
+                      + "\(stats.failed) failed · \(stats.tasks) issues still waiting")
             } else if stats.projects > 0 {
                 Text("\(stats.projects) projects")
                     .font(.system(size: 9))
@@ -241,13 +245,19 @@ private struct ProjectRow: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     headline
-                    if let pulse = digest.pulse { pulseLine(pulse) }
-                    if selected { detail.padding(.top, 5) }
+                    // One line each, except the one you are aiming at. Eight
+                    // projects at two lines apiece was the "chaotic" the whole
+                    // redesign is answering; the detail belongs to the row you
+                    // actually asked about.
+                    if selected {
+                        if let pulse = digest.pulse { pulseLine(pulse) }
+                        detail.padding(.top, 4)
+                    }
                 }
             }
             .padding(.leading, 11)
             .padding(.trailing, 13)
-            .padding(.vertical, 6)
+            .padding(.vertical, selected ? 6 : 3)
             .background(rowBackground)
             .contentShape(Rectangle())
         }
@@ -342,20 +352,44 @@ private struct ProjectRow: View {
             // than any number would.
             if !digest.jobs.isEmpty {
                 RunTape(tape: digest.jobs.prefix(4).map(\.status).reversed(), height: 7)
+                    .help(tapeExplanation)
+            }
+
+            // Which harness this project dispatches to — but only when it isn't
+            // the one everything else uses, because a label repeated on every
+            // row stops being information.
+            if !digest.agent.isEmpty, digest.agent != model.globalDefaultAgent {
+                Text(digest.agent)
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 3)
+                    .padding(.vertical, 0.5)
+                    .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 3))
+                    .help("fixes here are dispatched to \(digest.agent)")
             }
 
             if digest.taskCount > 0 && !selected {
-                Text("\(digest.taskCount) task\(digest.taskCount == 1 ? "" : "s")")
-                    .font(.system(size: 9))
+                Text("\(digest.taskCount)")
+                    .font(.system(size: 9, design: .monospaced))
                     .foregroundStyle(.tertiary)
+                    .help("\(digest.taskCount) issue\(digest.taskCount == 1 ? "" : "s") filed here "
+                          + "that nobody has been dispatched for")
             }
 
             if let at = digest.pulse?.at {
                 Text(Ago.short(at))
                     .font(.system(size: 9.5, design: .monospaced))
                     .foregroundStyle(.quaternary)
+                    .help(digest.pulse.map { "\($0.kind): \($0.text)" } ?? "")
             }
         }
+    }
+
+    /// The tape is four coloured ticks; nobody is born knowing what they mean.
+    private var tapeExplanation: String {
+        let recent = digest.jobs.prefix(4).map(\.status.label).reversed()
+        return "the last \(digest.jobs.prefix(4).count) agent runs here, oldest first: "
+            + recent.joined(separator: ", ")
     }
 
     /// What happened here last, in the language of what happened.
@@ -385,21 +419,27 @@ private struct ProjectRow: View {
         VStack(alignment: .leading, spacing: 5) {
             if !digest.jobs.isEmpty {
                 section("JOBS", count: digest.jobs.count) {
+                    // The real run, not the pip: a job you can right-click into
+                    // its own conversation has to carry the whole record.
                     ForEach(digest.jobs.prefix(2)) { job in
-                        HStack(spacing: 6) {
-                            Circle().fill(job.status.tint).frame(width: 4, height: 4)
-                            Text(job.title)
-                                .font(.system(size: 10))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                            Spacer(minLength: 6)
-                            Text(job.status.label)
-                                .font(.system(size: 9))
-                                .foregroundStyle(job.status.tint.opacity(0.9))
-                            if let seconds = job.seconds {
-                                Text(ProjectRow.elapsed(seconds))
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundStyle(.quaternary)
+                        if let run = model.run(job.id) {
+                            JobRow(run: run, attempts: job.attempts)
+                        } else {
+                            HStack(spacing: 6) {
+                                Circle().fill(job.status.tint).frame(width: 4, height: 4)
+                                Text(job.title)
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                Spacer(minLength: 6)
+                                Text(job.agent)
+                                    .font(.system(size: 8))
+                                    .foregroundStyle(.tertiary)
+                                if let seconds = job.seconds {
+                                    Text(ProjectRow.elapsed(seconds))
+                                        .font(.system(size: 9, design: .monospaced))
+                                        .foregroundStyle(.quaternary)
+                                }
                             }
                         }
                     }

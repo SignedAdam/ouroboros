@@ -4,3 +4,6 @@
 **/node_modules/
 **/__pycache__/
 **/*.egg-info/
+
+# Ouroboros run state: worktrees and per-repo scratch, never the repo
+.ouroboros/

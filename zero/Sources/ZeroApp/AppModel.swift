@@ -218,6 +218,18 @@ final class AppModel: ObservableObject {
         return installed.isEmpty ? [snapshot?.health.version != nil ? "claude" : "claude"] : installed
     }
 
+    /// The full run behind a digest's pip. The drawer shows compressed shapes;
+    /// its verbs need the real record.
+    func run(_ id: String) -> Run? {
+        (activeRuns + recentRuns).first { $0.id == id }
+    }
+
+    /// The machine-wide default, so a row only calls out a harness when it is
+    /// the exception rather than the rule.
+    var globalDefaultAgent: String {
+        (snapshot?.agents ?? []).first(where: \.isDefault)?.name ?? "claude"
+    }
+
     /// The agent this capture will dispatch to: an explicit pick for this
     /// capture, else the target project's default, else the global default.
     var effectiveAgent: String {
