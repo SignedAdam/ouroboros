@@ -21,60 +21,101 @@ public struct Pulse: Codable, Sendable, Equatable {
     }
 }
 
-/// A run, reduced to what fits on one line of the drawer — and to what you can
-/// do with it from there.
-public struct RunPip: Codable, Sendable, Equatable, Identifiable {
+/// Where one piece of work has got to, from a sentence you typed to a merge.
+///
+/// One vocabulary for issues and runs together. The drawer used to keep two
+/// lists — TASKS for issues nobody had dispatched, JOBS for runs — and the split
+/// was invisible from outside: the same sentence appeared under a different
+/// heading depending on whether an agent had been started, and neither heading
+/// said so.
+public enum WorkState: String, Codable, Sendable, CaseIterable {
+    /// Written down and never handed to anyone. These are the ones that rot.
+    case filed
+    case queued
+    case running
+    /// The agent stopped and asked something.
+    case asking
+    /// Verified, sitting on its branch, waiting for permission to land.
+    case ready
+    case landed
+    case failed
+    /// Stopped by a human.
+    case stopped
+
+    public static func of(_ run: Run) -> WorkState {
+        switch run.status {
+        case .queued:    return .queued
+        case .running, .verifying, .finishing: return .running
+        case .awaiting:  return .asking
+        case .failed:    return .failed
+        case .abandoned: return .stopped
+        // The same test the inbox uses, so the drawer and `ouro inbox` can never
+        // disagree about whether a fix actually landed.
+        case .succeeded:
+            return (run.mergedInto != nil || run.result?.prUrl != nil) ? .landed : .ready
+        }
+    }
+
+    public var label: String {
+        self == .asking ? "needs you" : rawValue
+    }
+
+    /// Moving right now, as opposed to waiting for someone.
+    public var isLive: Bool {
+        self == .queued || self == .running || self == .asking
+    }
+
+    /// Order within a project: what is moving, then what is waiting on you,
+    /// then what was only ever written down, then what is finished with.
+    public var rank: Int {
+        switch self {
+        case .asking:  return 0
+        case .running: return 1
+        case .queued:  return 2
+        case .ready:   return 3
+        case .failed:  return 4
+        case .filed:   return 5
+        case .landed:  return 6
+        case .stopped: return 7
+        }
+    }
+}
+
+/// One piece of work on one line, and everything a row needs to act on it.
+public struct IssuePip: Codable, Sendable, Equatable, Identifiable {
+    /// The issue's id where there is an issue file, else the run's. Either way
+    /// it is what the API takes.
     public var id: String
-    public var status: RunStatus
     public var title: String
+    public var state: WorkState
+    /// Filed at, or the run's last move.
     public var at: Date
-    public var seconds: Int?
+    /// The issue file. Absent for a freeform run, which was never an issue.
+    public var path: String?
+    public var runId: String?
     public var agent: String
-    /// The harness's conversation id, when it has one. Absent means "reopening
-    /// this is not on the menu", which is different from "it failed".
-    public var sessionId: String?
+    /// The harness kept a conversation id and can be told to reopen it.
     public var canResume: Bool
-    public var worktreePath: String?
-    public var branch: String?
-    /// How many runs this line stands for. The newest is the one shown; a
-    /// second attempt at the same issue is the same story, not a second one.
+    /// Attempts at this one issue. `state` describes the newest.
     public var attempts: Int
 
-    public init(id: String, status: RunStatus, title: String, at: Date, seconds: Int? = nil,
-                agent: String = "", sessionId: String? = nil, canResume: Bool = false,
-                worktreePath: String? = nil, branch: String? = nil, attempts: Int = 1) {
+    public init(id: String, title: String, state: WorkState, at: Date,
+                path: String? = nil, runId: String? = nil, agent: String = "",
+                canResume: Bool = false, attempts: Int = 1) {
         self.id = id
-        self.status = status
         self.title = title
+        self.state = state
         self.at = at
-        self.seconds = seconds
+        self.path = path
+        self.runId = runId
         self.agent = agent
-        self.sessionId = sessionId
         self.canResume = canResume
-        self.worktreePath = worktreePath
-        self.branch = branch
         self.attempts = attempts
     }
 }
 
-/// An issue nobody has been dispatched for — and everything needed to change
-/// that from a right-click.
-public struct TaskPip: Codable, Sendable, Equatable, Identifiable {
-    public var id: String
-    public var title: String
-    public var path: String
-    public var at: Date?
-
-    public init(id: String, title: String, path: String, at: Date? = nil) {
-        self.id = id
-        self.title = title
-        self.path = path
-        self.at = at
-    }
-}
-
-/// Which of the drawer's three lists a project belongs to. Assigned by the
-/// daemon so the app never has to re-derive it and get a different answer.
+/// Why a project is in the drawer at all. Assigned by the daemon so the app
+/// never has to re-derive it and get a different answer.
 public enum ProjectSection: String, Codable, Sendable, CaseIterable {
     /// Pinned by hand. Always shown, however cold.
     case favourite
@@ -88,28 +129,9 @@ public enum ProjectSection: String, Codable, Sendable, CaseIterable {
 
     public var label: String {
         switch self {
-        case .favourite: return "FAVOURITES"
-        case .ouroboros: return "IN OUROBOROS"
-        case .git:       return "GIT ACTIVITY"
-        }
-    }
-
-    public var glyph: String {
-        switch self {
-        case .favourite: return "star.fill"
-        case .ouroboros: return "circle.hexagonpath"
-        case .git:       return "arrow.triangle.branch"
-        }
-    }
-
-    public var explanation: String {
-        switch self {
-        case .favourite:
-            return "Pinned by you. These stay here however long it has been."
-        case .ouroboros:
-            return "You have filed or fixed something here through Ouroboros."
-        case .git:
-            return "You have been committing here, but Ouroboros has never run in it."
+        case .favourite: return "pinned"
+        case .ouroboros: return "ouroboros"
+        case .git:       return "git"
         }
     }
 }
@@ -134,21 +156,24 @@ public struct ProjectDigest: Codable, Sendable, Equatable, Identifiable {
     /// the global one.
     public var agent: String
     public var pulse: Pulse?
-    /// Issues filed and never dispatched — the work you have described but not
-    /// yet handed to anyone.
-    public var tasks: [TaskPip]
-    public var taskCount: Int
-    /// Newest first.
-    public var jobs: [RunPip]
+    /// The work in this project, most urgent first. Issues and runs in one
+    /// list, because to the person who typed the sentence they are one thing.
+    public var issues: [IssuePip]
+    /// Filed and never dispatched. The count the drawer puts a noun on.
+    public var openCount: Int
     public var running: Int
     public var fixed: Int
     public var failed: Int
 
+    /// The one fact the row's right-hand side carries: what happened to this
+    /// project last, in the language of whatever happened.
+    public var lead: IssuePip? { issues.first }
+
     public init(id: String, name: String, path: String, handled: Bool,
                 section: ProjectSection = .git, favourite: Bool = false,
                 autonomy: Autonomy = .manual, agent: String = "",
-                pulse: Pulse? = nil, tasks: [TaskPip] = [], taskCount: Int = 0,
-                jobs: [RunPip] = [], running: Int = 0, fixed: Int = 0, failed: Int = 0) {
+                pulse: Pulse? = nil, issues: [IssuePip] = [], openCount: Int = 0,
+                running: Int = 0, fixed: Int = 0, failed: Int = 0) {
         self.id = id
         self.name = name
         self.path = path
@@ -158,12 +183,31 @@ public struct ProjectDigest: Codable, Sendable, Equatable, Identifiable {
         self.autonomy = autonomy
         self.agent = agent
         self.pulse = pulse
-        self.tasks = tasks
-        self.taskCount = taskCount
-        self.jobs = jobs
+        self.issues = issues
+        self.openCount = openCount
         self.running = running
         self.fixed = fixed
         self.failed = failed
+    }
+
+    /// A daemon older than this field sends no `issues`; render the project
+    /// rather than failing the whole snapshot on one missing key.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        path = try c.decode(String.self, forKey: .path)
+        handled = try c.decodeIfPresent(Bool.self, forKey: .handled) ?? false
+        section = try c.decodeIfPresent(ProjectSection.self, forKey: .section) ?? .git
+        favourite = try c.decodeIfPresent(Bool.self, forKey: .favourite) ?? false
+        autonomy = try c.decodeIfPresent(Autonomy.self, forKey: .autonomy) ?? .manual
+        agent = try c.decodeIfPresent(String.self, forKey: .agent) ?? ""
+        pulse = try c.decodeIfPresent(Pulse.self, forKey: .pulse)
+        issues = try c.decodeIfPresent([IssuePip].self, forKey: .issues) ?? []
+        openCount = try c.decodeIfPresent(Int.self, forKey: .openCount) ?? 0
+        running = try c.decodeIfPresent(Int.self, forKey: .running) ?? 0
+        fixed = try c.decodeIfPresent(Int.self, forKey: .fixed) ?? 0
+        failed = try c.decodeIfPresent(Int.self, forKey: .failed) ?? 0
     }
 }
 
@@ -248,10 +292,19 @@ public enum GitLog {
 /// against the modification times of the directories it came from, so a poll
 /// that changes nothing costs a handful of `stat` calls.
 public final class Digests: @unchecked Sendable {
+    /// An issue file as the drawer needs it: what it says, where it is, and
+    /// which status folder it is sitting in.
+    struct Filed {
+        var title: String
+        var path: String
+        var at: Date?
+        var status: IssueStatus
+    }
+
     private struct Facts {
         var lastIssue: Pulse?
-        /// Issues still sitting in `.issues/new`, newest first.
-        var open: [(title: String, path: String, at: Date?)]
+        /// Every issue file in the project, newest first.
+        var issues: [Filed]
         var git: Pulse?
     }
 
@@ -268,34 +321,56 @@ public final class Digests: @unchecked Sendable {
         let facts = facts(for: project)
         let mine = runs.filter { $0.projectId == project.id }
 
-        // "Defined but not launched": an issue nobody has dispatched an agent
-        // for. Runs remember the issue file they came from, so this is exact
-        // rather than a guess from titles.
-        let dispatched = Set(mine.compactMap { $0.issuePath.map(Registry.normalize) })
-        let waiting = facts.open.filter { !dispatched.contains(Registry.normalize($0.path)) }
+        // Resolving an issue MOVES its file into another status folder, so the
+        // path a run recorded at dispatch goes stale the moment a fix lands.
+        // The basename survives the move, and is what still ties a finished run
+        // back to the issue it is about.
+        var byName: [String: Filed] = [:]
+        for filed in facts.issues {
+            let name = (filed.path as NSString).lastPathComponent
+            if byName[name] == nil { byName[name] = filed }
+        }
 
         // One line per piece of work, not per attempt. Retrying an issue three
         // times is one story with three chapters; showing it as three identical
         // titles stacked reads as a rendering bug, which is how it was reported.
+        var pips: [IssuePip] = []
         var seen: [String: Int] = [:]
-        var jobs: [RunPip] = []
+        var covered: Set<String> = []
         for run in mine {
-            let key = run.issuePath.map(Registry.normalize) ?? run.id
+            let name = run.issuePath.map { ($0 as NSString).lastPathComponent }
+            let key = name ?? run.id
             if let index = seen[key] {
-                jobs[index].attempts += 1
+                pips[index].attempts += 1
                 continue
             }
-            seen[key] = jobs.count
-            jobs.append(RunPip(
-                id: run.id, status: run.status, title: run.title,
+            seen[key] = pips.count
+            let filed = name.flatMap { byName[$0] }
+            if let filed { covered.insert(filed.path) }
+            pips.append(IssuePip(
+                id: filed.map { IssueService.id(project: project, path: $0.path) } ?? run.id,
+                title: filed?.title ?? run.title,
+                state: WorkState.of(run),
                 at: run.endedAt ?? run.startedAt ?? run.queuedAt,
-                seconds: run.duration.map { Int($0) },
+                path: filed?.path,
+                runId: run.id,
                 agent: run.agent,
-                sessionId: run.sessionId,
-                canResume: run.sessionId != nil && resumable(run),
-                worktreePath: run.worktreePath,
-                branch: run.branch))
-            if jobs.count == 4 { break }
+                canResume: run.sessionId != nil && resumable(run)))
+        }
+
+        // "Filed and never launched": described, and handed to nobody. Distinct
+        // from a run that failed, which was at least attempted.
+        let waiting = facts.issues.filter { $0.status == .new && !covered.contains($0.path) }
+        for filed in waiting {
+            pips.append(IssuePip(
+                id: IssueService.id(project: project, path: filed.path),
+                title: filed.title,
+                state: .filed,
+                at: filed.at ?? .distantPast,
+                path: filed.path))
+        }
+        pips.sort { a, b in
+            a.state.rank != b.state.rank ? a.state.rank < b.state.rank : a.at > b.at
         }
 
         let handled = project.lastUsed != nil || !mine.isEmpty || facts.lastIssue != nil
@@ -314,12 +389,10 @@ public final class Digests: @unchecked Sendable {
             autonomy: project.policy.autonomy,
             agent: project.defaultAgent ?? defaultAgent,
             pulse: pulse,
-            tasks: waiting.prefix(4).map {
-                TaskPip(id: IssueService.id(project: project, path: $0.path),
-                        title: $0.title, path: $0.path, at: $0.at)
-            },
-            taskCount: waiting.count,
-            jobs: Array(jobs),
+            // Six is what an open project can show without the drawer becoming
+            // the issue tracker. `ouro issues` is the issue tracker.
+            issues: Array(pips.prefix(6)),
+            openCount: waiting.count,
             running: mine.filter { $0.status.isActive && $0.status != .queued }.count,
             fixed: mine.filter { $0.status == .succeeded }.count,
             failed: mine.filter { $0.status == .failed }.count)
@@ -343,7 +416,11 @@ public final class Digests: @unchecked Sendable {
             lastIssue: newest.flatMap { issue in
                 issue.created.map { Pulse(kind: "filed", text: issue.title, at: $0) }
             },
-            open: issues.filter { $0.status == .new }.map { ($0.title, $0.path ?? "", $0.created) },
+            issues: issues.compactMap { issue in
+                guard let path = issue.path else { return nil }
+                return Filed(title: issue.title, path: path,
+                             at: issue.created, status: issue.status)
+            },
             git: GitLog.lastEvent(repo: project.path))
 
         lock.lock()

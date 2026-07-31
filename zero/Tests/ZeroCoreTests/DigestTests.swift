@@ -85,8 +85,8 @@ final class GitLogTailTests: XCTestCase {
 
 final class DigestTests: XCTestCase {
     /// The one distinction the drawer is built on: an issue with a run against
-    /// it is a job; an issue without one is a task still waiting for you.
-    func testTasksAreTheIssuesNobodyWasDispatchedFor() throws {
+    /// it is in flight; an issue without one is filed, and rotting.
+    func testFiledIsTheIssuesNobodyWasDispatchedFor() throws {
         let repo = scratch("digest")
         let store = IssueStore(rootDir: repo)
         let dispatched = try XCTUnwrap(store.write(title: "already being fixed", body: "one"))
@@ -98,11 +98,59 @@ final class DigestTests: XCTestCase {
                       base: "main", finish: .merge, status: .running)
 
         let digest = Digests().digest(project, runs: [run])
-        XCTAssertEqual(digest.taskCount, 1)
-        XCTAssertEqual(digest.tasks.map(\.title), ["still waiting"])
-        XCTAssertEqual(digest.jobs.map(\.id), ["r-1"])
+        XCTAssertEqual(digest.openCount, 1)
+        // Running sorts above filed: what is moving comes first.
+        XCTAssertEqual(digest.issues.map(\.state), [.running, .filed])
+        XCTAssertEqual(digest.issues.map(\.title), ["already being fixed", "still waiting"])
+        XCTAssertEqual(digest.issues.first?.runId, "r-1")
+        XCTAssertNil(digest.issues.last?.runId)
         XCTAssertEqual(digest.running, 1)
         XCTAssertTrue(digest.handled)
+    }
+
+    /// Resolving an issue MOVES its file, so the path a run recorded at dispatch
+    /// is stale by the time it lands. Losing the link would show the landed fix
+    /// as an orphan run with no way to tick it off.
+    func testARunStillFindsItsIssueAfterTheFileMoved() throws {
+        let repo = scratch("moved")
+        let store = IssueStore(rootDir: repo)
+        let issue = try XCTUnwrap(store.write(title: "the receipt total is wrong", body: "…"))
+        let dispatchedPath = try XCTUnwrap(issue.path)
+        let run = Run(id: "r-2", projectId: "p", projectName: "p", kind: .fix, agent: "claude",
+                      title: "the receipt total is wrong", issuePath: dispatchedPath, cwd: repo,
+                      base: "main", finish: .merge, status: .succeeded, mergedInto: "main")
+        _ = store.setStatus(issue, .done)
+
+        let project = Project(id: "p", name: "p", path: repo, lastUsed: Date())
+        let digest = Digests().digest(project, runs: [run])
+        XCTAssertEqual(digest.issues.count, 1)
+        XCTAssertEqual(digest.issues.first?.state, .landed)
+        // The id is the issue's, taken from where the file is NOW, so "mark
+        // done" and "delete" hit something that exists.
+        XCTAssertEqual(digest.issues.first?.id,
+                       IssueService.id(project: project,
+                                       path: (repo as NSString)
+                                           .appendingPathComponent(".issues/done/"
+                                               + (dispatchedPath as NSString).lastPathComponent)))
+        XCTAssertEqual(digest.openCount, 0)
+    }
+
+    /// Two goes at one issue is one story with two chapters, not two rows.
+    func testRetriesCollapseIntoOneRowWithACount() throws {
+        let repo = scratch("retries")
+        let store = IssueStore(rootDir: repo)
+        let issue = try XCTUnwrap(store.write(title: "flaky", body: "…"))
+        let project = Project(id: "p", name: "p", path: repo, lastUsed: Date())
+        func run(_ id: String, _ status: RunStatus) -> Run {
+            Run(id: id, projectId: "p", projectName: "p", kind: .fix, agent: "claude",
+                title: "flaky", issuePath: issue.path, cwd: repo, base: "main",
+                finish: .merge, status: status)
+        }
+        // Newest first, as the store hands them over.
+        let digest = Digests().digest(project, runs: [run("r-4", .running), run("r-3", .failed)])
+        XCTAssertEqual(digest.issues.count, 1)
+        XCTAssertEqual(digest.issues.first?.attempts, 2)
+        XCTAssertEqual(digest.issues.first?.state, .running)
     }
 
     func testAProjectOuroborosHasNeverTouchedFallsBackToGit() throws {
@@ -117,7 +165,7 @@ final class DigestTests: XCTestCase {
         XCTAssertFalse(digest.handled)
         XCTAssertEqual(digest.pulse?.kind, "commit")
         XCTAssertEqual(digest.pulse?.text, "something entirely unrelated")
-        XCTAssertEqual(digest.taskCount, 0)
+        XCTAssertEqual(digest.openCount, 0)
     }
 
     func testAHandledProjectLeadsWithItsLastIssue() throws {
@@ -143,10 +191,10 @@ final class DigestTests: XCTestCase {
         _ = store.write(title: "first", body: "one")
         let digests = Digests()
         let project = Project(id: "c", name: "c", path: repo, lastUsed: Date())
-        XCTAssertEqual(digests.digest(project, runs: []).taskCount, 1)
+        XCTAssertEqual(digests.digest(project, runs: []).openCount, 1)
 
         _ = store.write(title: "second", body: "two")
-        XCTAssertEqual(digests.digest(project, runs: []).taskCount, 2)
+        XCTAssertEqual(digests.digest(project, runs: []).openCount, 2)
     }
 }
 
@@ -194,7 +242,9 @@ final class SnapshotDecodingTests: XCTestCase {
         let digest = ProjectDigest(id: "p", name: "p", path: "/tmp/p", handled: true,
                                    autonomy: .assist,
                                    pulse: Pulse(kind: "filed", text: "x", at: Date()),
-                                   tasks: [TaskPip(id: "t1", title: "a", path: "/tmp/a.md")], taskCount: 1)
+                                   issues: [IssuePip(id: "t1", title: "a", state: .filed,
+                                                     at: Date(), path: "/tmp/a.md")],
+                                   openCount: 1)
         let snapshot = API.Snapshot(
             health: HealthDTO(ok: true, version: "0.1.0", pid: 1, uptime: 1, projects: 1,
                               activeRuns: 0, queuedRuns: 0, inbox: 0),
@@ -203,7 +253,8 @@ final class SnapshotDecodingTests: XCTestCase {
             stats: API.Stats(handled: 3, fixed: 2, tape: [.succeeded, .failed]))
         let decoded = try XCTUnwrap(
             Zero.decode(API.Snapshot.self, from: Zero.encode(snapshot)))
-        XCTAssertEqual(decoded.recents.first?.tasks.map(\.title), ["a"])
+        XCTAssertEqual(decoded.recents.first?.issues.map(\.title), ["a"])
+        XCTAssertEqual(decoded.recents.first?.issues.first?.state, .filed)
         XCTAssertEqual(decoded.recents.first?.autonomy, .assist)
         XCTAssertEqual(decoded.stats.tape, [RunStatus.succeeded, .failed])
         XCTAssertEqual(decoded.stats.fixed, 2)

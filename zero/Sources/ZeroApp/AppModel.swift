@@ -33,6 +33,10 @@ final class AppModel: ObservableObject {
     /// with every client.
     var recentsExpanded: Bool {
         get {
+            // Open on a machine that has never expressed a preference. A drawer
+            // that defaults shut hides the work every time you open the panel,
+            // and the fold is one click either way. Whatever you leave it on is
+            // what you get next time, which is the only rule that matters here.
             UserDefaults.standard.object(forKey: "recentsExpanded") as? Bool ?? true
         }
         set {
@@ -273,6 +277,37 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// One verb for "put me in front of this": reopen the conversation an agent
+    /// already had about it, or start one if it never had. Naming a harness
+    /// always means "start a fresh one with that harness".
+    func open(_ pip: IssuePip, agent: String? = nil) {
+        if agent == nil, pip.canResume, let runId = pip.runId {
+            resumeRun(runId)
+            return
+        }
+        guard pip.path != nil else {
+            status = "no issue file behind that one"
+            return
+        }
+        fixIssue(pip.id, agent: agent)
+    }
+
+    /// Confirmed done: the issue moves to `.issues/done` and the run behind it
+    /// leaves the inbox. Two calls because they are two separate facts, and the
+    /// same pair `ouro done` makes.
+    func markDone(_ pip: IssuePip) {
+        status = "done · \(pip.title)"
+        let runId = pip.runId
+        Task.detached { [client] in
+            _ = try? client.patch("/v1/issues/\(pip.id)", API.PatchIssue(status: "done"),
+                                  as: IssueDTO.self)
+            if let runId {
+                _ = try? client.post("/v1/runs/\(runId)/ack", as: API.Message.self)
+            }
+            await MainActor.run { [weak self] in self?.refresh() }
+        }
+    }
+
     func resumeRun(_ runId: String) {
         status = "reopening the conversation…"
         Task.detached { [client] in
@@ -344,6 +379,27 @@ extension InboxItem {
         case .proposal: return "proposal"
         }
     }
+}
+
+extension WorkState {
+    /// Colour carries urgency, not category: orange is moving, blue is waiting
+    /// on you, red went wrong, green landed. Everything else stays grey so the
+    /// three that matter are the three you see.
+    var tint: Color {
+        switch self {
+        case .filed, .stopped: return .secondary
+        case .queued:   return Color.secondary
+        case .running:  return Color(red: 1.0, green: 0.48, blue: 0.09)
+        case .asking:   return Color(red: 1.0, green: 0.74, blue: 0.18)
+        case .ready:    return Color(red: 0.47, green: 0.67, blue: 1.0)
+        case .landed:   return Color(red: 0.49, green: 0.85, blue: 0.34)
+        case .failed:   return Color(red: 1.0, green: 0.37, blue: 0.34)
+        }
+    }
+
+    /// Filed is the one state that is an absence of work rather than a kind of
+    /// it, so it is the one drawn hollow.
+    var isHollow: Bool { self == .filed || self == .stopped }
 }
 
 extension RunStatus {

@@ -415,11 +415,11 @@ struct QuickCaptureView: View {
                         Button(project.name) { model.selectedProjectId = project.id }
                     }
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "folder")
-                        Text(model.selectedProject?.name ?? "no project")
-                    }
-                    .font(.system(size: 11, weight: .medium))
+                    // No folder glyph. The name is already the name of a
+                    // directory; an icon in front of it adds a pixel of noise
+                    // and not one bit of information.
+                    Text(model.selectedProject?.name ?? "no project")
+                        .font(.system(size: 11, weight: .medium))
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -438,12 +438,11 @@ struct QuickCaptureView: View {
                         Button("Use this project's default") { model.agentOverride = nil }
                     }
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "cpu")
-                        Text(model.effectiveAgent)
-                    }
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(model.agentOverride != nil ? ouroOrange : Color.secondary)
+                    // A `cpu` glyph here read as a disk and meant nothing. The
+                    // word "claude" is already unambiguous.
+                    Text(model.effectiveAgent)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(model.agentOverride != nil ? ouroOrange : Color.secondary)
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
@@ -485,25 +484,26 @@ struct QuickCaptureView: View {
 
                 Spacer()
 
-                if matches.isEmpty {
-                    Text("⏎ file").font(.system(size: 10)).foregroundStyle(.secondary)
-                    Text("⌘⏎ file & fix").font(.system(size: 10)).foregroundStyle(ouroOrange)
-                    // Only worth a slot when there is somewhere to tab to.
-                    if model.switchOrder.count > 1 {
-                        Text("⇥ project").font(.system(size: 10)).foregroundStyle(.secondary)
+                // Three hints, generous spacing, no wrapping.
+                //
+                // This row used to carry six: file, file & fix, ⇥ project,
+                // / commands, esc, and the global hotkey — unseparated, so it
+                // read as one run-on string, and "file & fix" wrapped onto a
+                // second line because six labels do not fit 560 points.
+                //
+                // Cut: `esc` (every panel on this machine closes with escape),
+                // the hotkey (you just pressed it to get here), and `⇥ project`
+                // (a shortcut worth having, not worth a permanent slot).
+                HStack(spacing: 16) {
+                    if matches.isEmpty {
+                        hint("⏎", "file")
+                        hint("⌘⏎", "fix", accent: true)
+                        hint("/", "commands")
+                    } else {
+                        hint("⏎", "run", accent: true)
+                        hint("⇥", "complete")
+                        hint("↑↓", "pick")
                     }
-                    Text("/ commands").font(.system(size: 10)).foregroundStyle(.secondary)
-                } else {
-                    Text("⏎ run").font(.system(size: 10)).foregroundStyle(ouroOrange)
-                    Text("⇥ complete").font(.system(size: 10)).foregroundStyle(.secondary)
-                    Text("↑↓ pick").font(.system(size: 10)).foregroundStyle(.secondary)
-                }
-                Text("esc").font(.system(size: 10)).foregroundStyle(.secondary)
-
-                if !hotkeyLabel.isEmpty {
-                    Text(hotkeyLabel)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.tertiary)
                 }
             }
             .padding(.horizontal, 18)
@@ -519,6 +519,20 @@ struct QuickCaptureView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(ouroOrange.opacity(0.25), lineWidth: 1))
+    }
+
+    /// A key and what it does, as two weights of the same line. The key is the
+    /// thing you scan for, so it is the one that gets the ink.
+    private func hint(_ key: String, _ verb: String, accent: Bool = false) -> some View {
+        HStack(spacing: 4) {
+            Text(key)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(accent ? ouroOrange : Color.secondary)
+            Text(verb)
+                .font(.system(size: 10))
+                .foregroundStyle(accent ? ouroOrange.opacity(0.75) : Color.secondary.opacity(0.75))
+        }
+        .fixedSize()
     }
 
     static func elapsed(since start: Date) -> String {

@@ -4,13 +4,10 @@ import ZeroCore
 
 /// The verbs behind every row in the drawer.
 ///
-/// the operator's complaint about the first drawer was that it showed things and let you
-/// do nothing with them. The fix is not "add a menu": it is that every object on
-/// screen has the same small, predictable set of verbs, reachable the same two
-/// ways — right-click for all of them, hover for the one you want most often.
-///
-/// Every verb here is an API call. Nothing in this file knows how to move a file
-/// or run git; it asks the daemon, exactly as `ouro` does from a shell.
+/// Every object on screen has the same small, predictable set of verbs, reached
+/// the same two ways — right-click for all of them, hover for the one or two you
+/// want most often. Every verb is an API call: nothing in this file knows how to
+/// move a file or run git, it asks the daemon exactly as `ouro` does.
 @MainActor
 enum RowActions {
 
@@ -20,7 +17,7 @@ enum RowActions {
     static func projectMenu(_ project: Project, model: AppModel) -> some View {
         Button("Capture into \(project.name)") { model.selectedProjectId = project.id }
         Divider()
-        Button(project.favourite ? "Remove from favourites" : "Add to favourites") {
+        Button(project.favourite ? "Unpin" : "Pin to the top") {
             model.patchProject(project.id, API.PatchProject(favourite: !project.favourite))
         }
         // "Until active again" is the whole contract, so the menu says it rather
@@ -29,7 +26,7 @@ enum RowActions {
             model.patchProject(project.id, API.PatchProject(hidden: true))
         }
         Divider()
-        Menu("Default agent") {
+        Menu("Agent") {
             ForEach(model.availableAgents, id: \.self) { agent in
                 Button(agent + (project.defaultAgent == agent ? "  ✓" : "")) {
                     model.patchProject(project.id, API.PatchProject(defaultAgent: agent))
@@ -45,61 +42,55 @@ enum RowActions {
             }
         }
         Divider()
-        Button("Open in Finder") { NSWorkspace.shared.open(URL(fileURLWithPath: project.path)) }
-        Button("Open in terminal") { model.openTerminal(at: project.path) }
-        Button("Open agent view here") { model.openAgentView(project) }
+        Button("Finder") { NSWorkspace.shared.open(URL(fileURLWithPath: project.path)) }
+        Button("Terminal") { model.openTerminal(at: project.path) }
+        Button("Agent view") { model.openAgentView(project) }
         Button("Copy path") { copy(project.path) }
         Divider()
         Button("Remove from Ouroboros") { model.forgetProject(project.id) }
     }
 
-    // MARK: tasks (filed issues)
+    // MARK: work
 
+    /// One menu for every state, because to the person who typed the sentence
+    /// there is one object here, not an issue and a run.
     @ViewBuilder
-    static func taskMenu(_ task: TaskPip, project: String, model: AppModel) -> some View {
-        Button("Fix it now") { model.fixIssue(task.id) }
-        Menu("Fix it with") {
-            ForEach(model.availableAgents, id: \.self) { agent in
-                Button(agent) { model.fixIssue(task.id, agent: agent) }
+    static func issueMenu(_ pip: IssuePip, model: AppModel) -> some View {
+        if pip.canResume, let runId = pip.runId {
+            Button("Resume in \(pip.agent)") { model.resumeRun(runId) }
+        }
+        if pip.path != nil {
+            Menu(pip.runId == nil ? "Start" : "Start again") {
+                ForEach(model.availableAgents, id: \.self) { agent in
+                    Button(agent) { model.open(pip, agent: agent) }
+                }
             }
         }
-        Divider()
-        Button("Open the issue file") { NSWorkspace.shared.open(URL(fileURLWithPath: task.path)) }
-        Button("Copy title") { copy(task.title) }
-        Divider()
-        Button("Delete") { model.deleteIssue(task.id) }
-    }
-
-    // MARK: jobs (runs)
-
-    @ViewBuilder
-    static func jobMenu(_ run: Run, model: AppModel) -> some View {
-        // The reason a run carries a session id at all: the conversation is the
-        // most useful artefact an agent leaves behind, and it used to be
-        // unreachable the moment the window closed.
-        if run.sessionId != nil {
-            Button("Resume this conversation") { model.resumeRun(run.id) }
+        if let runId = pip.runId {
             Divider()
-        }
-        Button("Open the log") { model.openLog(run.id) }
-        if run.branch != nil {
-            Button("Show the diff") { model.showDiff(run.id) }
-        }
-        if run.worktreePath != nil {
-            Button("Open the worktree") { model.openWorktree(run.id) }
+            if pip.state == .ready {
+                Button("Merge") { model.runAction("merge", runId: runId) }
+            }
+            if pip.state.isLive {
+                Button("Stop") { model.runAction("stop", runId: runId) }
+            } else {
+                Button("Retry") { model.runAction("retry", runId: runId) }
+            }
+            if pip.state == .landed {
+                Button("Undo the merge") { model.runAction("undo", runId: runId) }
+            }
+            Button("Copy log command") { model.openLog(runId) }
+            Button("Copy diff command") { model.showDiff(runId) }
+            Button("Worktree") { model.openWorktree(runId) }
         }
         Divider()
-        if run.status.isActive {
-            Button("Stop it") { model.runAction("stop", runId: run.id) }
-        } else {
-            if run.status == .succeeded && run.mergedInto == nil {
-                Button("Merge it") { model.runAction("merge", runId: run.id) }
-            }
-            if run.mergedInto != nil {
-                Button("Undo the merge") { model.runAction("undo", runId: run.id) }
-            }
-            Button("Run it again") { model.runAction("retry", runId: run.id) }
-            Button("Clear from the inbox") { model.runAction("ack", runId: run.id) }
+        if let path = pip.path {
+            Button("Open file") { NSWorkspace.shared.open(URL(fileURLWithPath: path)) }
+        }
+        Button("Copy title") { copy(pip.title) }
+        if pip.path != nil {
+            Button("Mark done") { model.markDone(pip) }
+            Button("Delete") { model.deleteIssue(pip.id) }
         }
     }
 
@@ -109,82 +100,94 @@ enum RowActions {
     }
 }
 
-/// A filed issue, as a row you can act on.
+/// One piece of work, as a row you can act on.
 ///
-/// Click opens the file, hover offers the one verb worth a single click, and
-/// right-click has the rest. Before this, a filed task was a line of grey text.
-struct TaskRow: View {
-    let task: TaskPip
-    let project: String
+/// Reads without hovering: a dot says how it is going, the title says what it
+/// is, the right edge names the state. Hovering adds the two verbs worth a
+/// single click — get an agent onto it, and tick it off.
+struct IssueRow: View {
+    let pip: IssuePip
     @EnvironmentObject var model: AppModel
     @State private var hovering = false
 
     var body: some View {
-        // No bullet. The section's hairline already says these rows belong
-        // together, and a dot in front of every line is exactly the decoration
-        // this redesign exists to remove.
-        HStack(spacing: 6) {
-            Text(task.title)
-                .font(.system(size: 10))
-                .foregroundStyle(hovering ? Color.primary : Color.secondary)
-                .lineLimit(1)
-            Spacer(minLength: 4)
-            if hovering {
-                Button("fix") { model.fixIssue(task.id) }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(ouroOrange)
-            }
-        }
-        .padding(.vertical, 1)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture { NSWorkspace.shared.open(URL(fileURLWithPath: task.path)) }
-        .contextMenu { RowActions.taskMenu(task, project: project, model: model) }
-        .help("click opens the file · right-click for everything else")
-    }
-}
-
-/// One run, as a row you can act on.
-struct JobRow: View {
-    let run: Run
-    /// How many runs this row stands for — see `RunPip.attempts`.
-    var attempts: Int = 1
-    @EnvironmentObject var model: AppModel
-    @State private var hovering = false
-
-    var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 7) {
+            // Hollow means nobody has been dispatched. That single distinction
+            // is the difference between work in flight and work rotting.
             Circle()
-                .fill(run.status.tint)
-                .frame(width: 4, height: 4)
-            Text(run.title)
-                .font(.system(size: 10))
-                .foregroundStyle(hovering ? Color.primary : Color.secondary)
+                .strokeBorder(pip.state.tint, lineWidth: pip.state.isHollow ? 1 : 2.5)
+                .frame(width: 5, height: 5)
+
+            Text(pip.title)
+                .font(.system(size: 11))
+                .foregroundStyle(hovering ? Color.primary : Color.primary.opacity(0.72))
                 .lineLimit(1)
-            Spacer(minLength: 4)
-            if attempts > 1 {
-                Text("×\(attempts)")
+                .truncationMode(.tail)
+
+            if pip.attempts > 1 {
+                Text("×\(pip.attempts)")
                     .font(.system(size: 8, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .help("\(attempts) attempts at this issue; the newest is shown")
+                    .foregroundStyle(.quaternary)
             }
-            Text(run.agent)
-                .font(.system(size: 8))
-                .foregroundStyle(.tertiary)
-            if hovering, run.sessionId != nil {
-                Button("open") { model.resumeRun(run.id) }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(ouroOrange)
-            }
+
+            Spacer(minLength: 8)
+
+            if hovering { verbs }
+
+            Text(pip.state.label)
+                .font(.system(size: 9.5))
+                .foregroundStyle(pip.state.isHollow ? Color.secondary : pip.state.tint)
+                .fixedSize()
+
+            Text(Ago.short(pip.at))
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundStyle(.quaternary)
+                .frame(width: 22, alignment: .trailing)
         }
-        .padding(.vertical, 1)
+        .padding(.vertical, 2)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .contextMenu { RowActions.jobMenu(run, model: model) }
-        .help(run.sessionId != nil
-              ? "right-click to resume the conversation this agent had"
-              : "right-click for the log, diff and worktree")
+        .onTapGesture {
+            guard let path = pip.path else { return }
+            NSWorkspace.shared.open(URL(fileURLWithPath: path))
+        }
+        .contextMenu { RowActions.issueMenu(pip, model: model) }
+    }
+
+    /// Two, never more. Everything else is a right-click away.
+    ///
+    /// Each one carries its own padding and hit shape: a bare 8pt glyph is a
+    /// target you miss, and a miss here drags the whole panel, because the
+    /// capture window is movable by its background.
+    @ViewBuilder
+    private var verbs: some View {
+        HStack(spacing: 4) {
+            if pip.canResume || pip.path != nil {
+                Button { model.open(pip) } label: {
+                    Text(pip.canResume ? "open" : "fix")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(ouroOrange)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 3)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(pip.canResume ? "reopen this conversation in \(pip.agent)"
+                                    : "put an agent on it now")
+            }
+            if pip.path != nil {
+                Button { model.markDone(pip) } label: {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 3)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("done")
+            }
+        }
+        .padding(.trailing, 3)
     }
 }

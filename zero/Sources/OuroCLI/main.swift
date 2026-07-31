@@ -26,6 +26,7 @@ func help() {
         ("  ouro", "what needs you, what's in flight"),
         ("  ouro inbox", "the needs-you queue"),
         ("  ouro fix [issue-id]", "dispatch an agent (newest issue if omitted)"),
+        ("  ouro done <issue-id>", "confirm one is finished"),
         ("  ouro runs -w", "live table of every agent"),
         ("  ouro log <run> -f", "follow one agent's output"),
         ("  ouro diff <run>", "what it changed"),
@@ -80,6 +81,7 @@ case "setup", "init":                 Commands.setup(args)
 case "i", "issue", "file":            Commands.issue(args)
 case "issues", "ls":                  Commands.issues(args)
 case "fix":                           Commands.fix(args)
+case "done", "resolve":               Commands.done(args)
 case "runs", "ps":                    Commands.runs(args)
 case "log", "logs":                   Commands.log(args)
 case "diff":                          Commands.diff(args)

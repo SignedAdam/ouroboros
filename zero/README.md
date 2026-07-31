@@ -76,6 +76,7 @@ ouro setup [~/dev]                     find your repos and register them
 ouro                                   what needs you, what's in flight
 ouro i "…" [--fix] [-p proj] [--pr]    file an issue where you're standing
 ouro fix [issue-id]                    dispatch (newest open issue if omitted)
+ouro done <issue-id>                   confirm one is finished; clears its run
 ouro runs -w                           live table of every agent
 ouro log <run> -f  ·  ouro diff <run>
 ouro reply <run> "…" [-a codex]        answer a question, optionally switch harness

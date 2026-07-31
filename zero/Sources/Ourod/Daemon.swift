@@ -829,7 +829,7 @@ final class Daemon: @unchecked Sendable {
                 fixed: all.filter { $0.status == .succeeded }.count,
                 failed: all.filter { $0.status == .failed }.count,
                 running: all.filter { $0.status.isActive && $0.status != .queued }.count,
-                tasks: recents.reduce(0) { $0 + $1.taskCount },
+                tasks: recents.reduce(0) { $0 + $1.openCount },
                 projects: registry.all().count,
                 // Oldest first: a tape is read left to right, and the newest
                 // run belongs at the end where the eye lands.

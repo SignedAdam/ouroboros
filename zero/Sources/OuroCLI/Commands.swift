@@ -145,6 +145,35 @@ enum Commands {
         }
     }
 
+    /// Confirm a piece of work is really finished: the issue file moves to
+    /// `.issues/done` and the run behind it stops asking for attention.
+    /// Ouroboros resolves an issue when its own gate goes green; this is a
+    /// human saying so, which is not the same claim.
+    static func done(_ args: Args) {
+        let client = Zero0.connected()
+        guard let issueId = args.positional.first else {
+            Out.die("which one? ouro done <issue-id>   (ids from `ouro issues`)")
+        }
+        do {
+            let issue: IssueDTO = try client.patch("/v1/issues/\(issueId)",
+                                                   API.PatchIssue(status: "done"))
+            print("  \(Out.mark()) \(Ansi.bold("done"))  \(Ansi.dim(issue.projectName)) · \(issue.title)")
+            // Whatever ran against it is now noise in the inbox. Matched on the
+            // file's name, not its path: resolving it just moved the file.
+            let name = (issue.path as NSString).lastPathComponent
+            if !name.isEmpty,
+               let list = try? client.get("/v1/runs?project=\(escape(issue.projectId))",
+                                          as: API.RunList.self) {
+                for run in list.runs where !run.acknowledged
+                    && run.issuePath.map({ ($0 as NSString).lastPathComponent }) == name {
+                    _ = try? client.post("/v1/runs/\(run.id)/ack", as: API.Message.self)
+                }
+            }
+        } catch {
+            Out.die("\(error)")
+        }
+    }
+
     // MARK: - runs
 
     static func runs(_ args: Args) {
