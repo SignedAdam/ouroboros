@@ -21,6 +21,11 @@ struct ProjectsDrawer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Above the projects and above the fold, because what is waiting on
+            // you is not a property of any one project and must not be found by
+            // opening them one at a time. Empty is the normal case, and empty
+            // costs nothing: no header, no placeholder, no height.
+            needsYou
             rail
             if expanded {
                 Rectangle()
@@ -39,6 +44,38 @@ struct ProjectsDrawer: View {
         // corners land inside the straight part of the panel's bottom edge and
         // the join has no notch in it.
         .padding(.horizontal, 17)
+    }
+
+    // MARK: what needs you
+
+    /// Everything waiting on a person, across every project, lifted out of the
+    /// per-project lists that used to bury it.
+    ///
+    /// The set comes from `AppModel.waitingOnYou`, which reads the inbox — the
+    /// same `Inbox.build` that `ouro inbox` prints — so the drawer and the CLI
+    /// cannot come to different conclusions about what is outstanding.
+    @ViewBuilder
+    private var needsYou: some View {
+        let waiting = model.waitingOnYou
+        if !waiting.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(waiting) { row in
+                    IssueRow(pip: row.pip, project: row.project)
+                        .padding(.horizontal, 13)
+                }
+            }
+            .padding(.top, 6)
+            .padding(.bottom, 5)
+            .background(alignment: .leading) {
+                // The one mark the group gets. A word over the top of it would
+                // be a label explaining a list you have already read.
+                Rectangle()
+                    .fill(LinearGradient(colors: [ouroOrange, ouroOrange.opacity(0.15)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .frame(width: 2)
+                    .padding(.vertical, 4)
+            }
+        }
     }
 
     // MARK: the footer line
@@ -90,16 +127,16 @@ struct ProjectsDrawer: View {
         } else if reviewable > 0 {
             Text("\(reviewable) to review")
                 .font(.system(size: 9.5, weight: .medium))
-                .foregroundStyle(WorkState.ready.tint)
+                .foregroundStyle(WorkState.review.tint)
                 .fixedSize()
         }
     }
 
-    /// Counted from the digests rather than `stats`, which folds ready and
-    /// landed together under `fixed` and so cannot tell "waiting for you" from
-    /// "already merged".
+    /// Counted from the digests rather than `stats`, which folds review and
+    /// merged together under `fixed` and so cannot tell "waiting for you" from
+    /// "already in".
     private var reviewable: Int {
-        model.recents.reduce(0) { $0 + $1.tally.ready + $1.tally.asking }
+        model.recents.reduce(0) { $0 + $1.tally.review + $1.tally.asking }
     }
 
     // MARK: the list
@@ -117,8 +154,10 @@ struct ProjectsDrawer: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
             } else {
-                let ours = model.recents.filter { $0.section != .git }
-                let theirs = model.recents.filter { $0.section == .git }
+                // Through the model, so a project that has just been hidden or
+                // forgotten keeps its slot until its exit has played.
+                let ours = model.visibleRecents.filter { $0.section != .git }
+                let theirs = model.visibleRecents.filter { $0.section == .git }
                 ForEach(ours) { row($0) }
                 if !theirs.isEmpty {
                     groupRule
@@ -210,7 +249,7 @@ private struct ProjectRow: View {
         // through the open project's work, which is what makes the issues below
         // read as hanging off this project instead of floating under it.
         HStack(alignment: .top, spacing: 7) {
-            SelectionRail(lit: selected, tall: selected && !digest.issues.isEmpty)
+            SelectionRail(lit: selected, tall: selected && !issues.isEmpty)
 
             // The issue rows are siblings of the project's button, never inside
             // its label: a plain Button swallows every click landing in it, so
@@ -234,18 +273,26 @@ private struct ProjectRow: View {
         }
         .padding(.leading, 8)
         .padding(.trailing, 9)
+        // Vertical only, and only when the row opens to show its work — which
+        // is a deliberate click, not a cursor passing over. Nothing on the
+        // headline's own line may change size: see `headline`.
         .padding(.vertical, selected ? 5 : 3)
         .background(rowBackground)
         // Inset from the drawer's edge so selection is a *shape* sitting in the
         // list rather than a band painted across it.
         .padding(.horizontal, 5)
+        .vanishing(model.isLeaving(digest.id))
     }
 
     private var headline: some View {
         HStack(spacing: 6) {
+            // Fixed weight. It used to go `.medium` → `.semibold` on selection,
+            // which changes how wide the name is and shunts the star, the chip,
+            // the bar and the age along the line every time you pick a row.
+            // Selection is said with colour and with the rail, never with
+            // metrics.
             Text(digest.name)
-                .font(.system(size: 12.5, weight: selected ? .semibold : .medium,
-                              design: .rounded))
+                .font(.system(size: 12.5, weight: .medium, design: .rounded))
                 .foregroundStyle(selected ? Color.primary : Color.primary.opacity(0.85))
                 .lineLimit(1)
 
@@ -263,11 +310,16 @@ private struct ProjectRow: View {
             // Two facts, in the order you would want them: the one thing worth
             // a word, then how much else is in there.
             note
-            TallyBar(tally: digest.tally, selected: selected)
+            TallyBar(tally: digest.tally)
             age
         }
         .help(tooltip)
     }
+
+    /// Through the model rather than straight off the digest, so a row that has
+    /// just been deleted is gone from here the moment its exit finishes, not
+    /// whenever the next poll lands.
+    private var issues: [IssuePip] { model.issues(of: digest) }
 
     // MARK: what this project is carrying
 
@@ -283,15 +335,19 @@ private struct ProjectRow: View {
             let text = tally.asking == 1 ? "needs you" : "\(tally.asking) need you"
             return (text, WorkState.asking.tint, true)
         }
+        if tally.conflicts > 0 {
+            return ("\(tally.conflicts) conflict\(tally.conflicts == 1 ? "" : "s")",
+                    WorkState.conflicts.tint, true)
+        }
         if tally.failed > 0 { return ("\(tally.failed) failed", WorkState.failed.tint, true) }
-        if tally.ready > 0 { return ("\(tally.ready) to review", WorkState.ready.tint, true) }
+        if tally.review > 0 { return ("\(tally.review) to review", WorkState.review.tint, true) }
         if tally.running > 0 {
             return ("\(tally.running) running", WorkState.running.tint, false)
         }
         if tally.filed > 0 { return ("\(tally.filed) filed", Color.primary.opacity(0.45), false) }
         // Nothing open, but Ouroboros has worked here. Better than the pulse,
         // which would say "filed" about an issue that has since been closed.
-        if tally.landed > 0 { return ("\(tally.landed) done", Color.primary.opacity(0.38), false) }
+        if tally.merged > 0 { return ("\(tally.merged) done", Color.primary.opacity(0.38), false) }
         if let kind = digest.pulse?.kind, !kind.isEmpty {
             return (kind, Color.primary.opacity(0.42), false)
         }
@@ -333,7 +389,7 @@ private struct ProjectRow: View {
         let open = tally.openStates.map { "\($0.count) \($0.state.label)" }
         lines.append(open.isEmpty ? "nothing open" : open.joined(separator: " · "))
         if tally.total > 0 {
-            lines.append("\(tally.landed) done · \(tally.total) total")
+            lines.append("\(tally.merged) done · \(tally.total) total")
         } else if let pulse = digest.pulse, !pulse.text.isEmpty {
             lines.append("\(pulse.kind): \(pulse.text)")
         }
@@ -359,13 +415,18 @@ private struct ProjectRow: View {
         if let project {
             HStack(spacing: 3) {
                 Button {
-                    model.patchProject(project.id, API.PatchProject(favourite: !project.favourite))
+                    model.perform(.favourite) {
+                        model.patchProject(project.id,
+                                           API.PatchProject(favourite: !project.favourite))
+                    }
                 } label: {
                     glyph(project.favourite ? "star.slash" : "star")
                 }
                 .help(project.favourite ? "unpin" : "pin to the top")
 
-                Button { NSWorkspace.shared.open(URL(fileURLWithPath: project.path)) } label: {
+                Button {
+                    model.perform(.openFinder) { model.open(path: project.path) }
+                } label: {
                     glyph("folder")
                 }
                 .help("open in Finder")
@@ -407,7 +468,7 @@ private struct ProjectRow: View {
     }
 
     private var ageLabel: String {
-        if let lead = digest.lead { return Ago.short(lead.at) }
+        if let lead = issues.first { return Ago.short(lead.at) }
         if let at = digest.pulse?.at { return Ago.short(at) }
         return ""
     }
@@ -420,12 +481,19 @@ private struct ProjectRow: View {
     @ViewBuilder
     private var work: some View {
         VStack(alignment: .leading, spacing: 1) {
-            if digest.issues.isEmpty {
-                Text(digest.handled ? "nothing open" : "never run here — ⌘⏎ starts it")
-                    .font(.system(size: 9.5))
-                    .foregroundStyle(.tertiary)
+            let rest = model.remainingIssues(of: digest)
+            if rest.isEmpty {
+                // Only when there is genuinely nothing. A project whose whole
+                // list has been lifted into the group above says nothing at
+                // all — "nothing open" over a row you can see two inches higher
+                // would be the panel contradicting itself.
+                if issues.isEmpty {
+                    Text(digest.handled ? "nothing open" : "never run here — ⌘⏎ starts it")
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(.tertiary)
+                }
             } else {
-                ForEach(digest.issues) { pip in
+                ForEach(rest) { pip in
                     IssueRow(pip: pip)
                 }
             }
@@ -503,7 +571,6 @@ private struct SelectionRail: View {
 /// dominate the one red sliver that actually wanted attention.
 private struct TallyBar: View {
     let tally: Tally
-    var selected: Bool
 
     private let width: CGFloat = 34
     private let gap: CGFloat = 1.5
@@ -538,7 +605,10 @@ private struct TallyBar: View {
                         .frame(width: slice.width)
                 }
             }
-            .frame(width: width, height: selected ? 4 : 3.5, alignment: .leading)
+            // One height, always. The bar used to grow half a point when its row
+            // was selected, which is a metric that moves under a click for no
+            // information at all.
+            .frame(width: width, height: 3.5, alignment: .leading)
         }
     }
 
@@ -555,8 +625,8 @@ private struct TallyBar: View {
     }
 
     /// Every segment gets `minimum`, and what is left over is shared out by
-    /// count. Six segments plus their gaps come to 25.5 points, so the widths
-    /// always fit the track exactly and the bar never wobbles between rows.
+    /// count. Seven segments plus their gaps come to 30 points inside a 34-point
+    /// track, so the widths always fit and the bar never wobbles between rows.
     private var slices: [Slice] {
         let states = tally.openStates
         guard !states.isEmpty else { return [] }

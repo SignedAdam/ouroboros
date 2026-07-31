@@ -198,7 +198,7 @@ public enum Inbox {
                         detail: "Verified, but \(run.branch ?? "its branch") no longer merges into "
                             + "\(verdict.base) — conflicts in \(files)\(more). Rebase it, then merge.",
                         createdAt: run.endedAt ?? run.queuedAt, runId: run.id,
-                        actions: ["diff", "drop"]))
+                        actions: ["diff", "rebase", "drop"]))
                 } else {
                     items.append(InboxItem(
                         id: run.id, kind: .review, projectName: run.projectName,

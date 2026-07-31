@@ -174,6 +174,29 @@ enum Commands {
         }
     }
 
+    /// Delete removes. `--keep` files it under `.issues/cancelled` instead, for
+    /// anyone who wants the trail from "half a thought at midnight" to "never
+    /// mind" — but that is the exception now, and it is spelled out.
+    static func deleteIssue(_ args: Args) {
+        let client = Zero0.connected()
+        guard let issueId = args.positional.first else {
+            Out.die("which one? ouro rm <issue-id>   (ids from `ouro issues`)")
+        }
+        do {
+            if args.bool("keep") {
+                let issue: IssueDTO = try client.delete("/v1/issues/\(issueId)?keep=1",
+                                                        as: IssueDTO.self)
+                Out.ok("cancelled \(issue.title)")
+            } else {
+                let reply: API.Message = try client.delete("/v1/issues/\(issueId)",
+                                                           as: API.Message.self)
+                Out.ok(reply.message)
+            }
+        } catch {
+            Out.die("\(error)")
+        }
+    }
+
     // MARK: - runs
 
     static func runs(_ args: Args) {
@@ -341,7 +364,7 @@ enum Commands {
         }
         Out.warn("conflicts with \(verdict.base)" + pair)
         for path in verdict.conflicts { print(Ansi.dim("    " + path)) }
-        print(Ansi.dim("    ouro fix — or rebase \(verdict.branch) onto \(verdict.base)"))
+        print(Ansi.dim("    ouro rebase \(runId)"))
     }
 
     static func runAction(_ action: String, _ args: Args) {
@@ -369,6 +392,10 @@ enum Commands {
             case "retry":
                 let run: Run = try client.post("/v1/runs/\(runId)/retry", as: Run.self)
                 Out.ok("retrying" + Ansi.dim("  \(run.id)"))
+            case "rebase":
+                let message: API.Message = try client.post("/v1/runs/\(runId)/rebase",
+                                                           as: API.Message.self)
+                message.ok ? Out.ok(message.message) : Out.err(message.message)
             case "ok", "drop", "ack":
                 _ = try client.post("/v1/runs/\(runId)/ack", as: API.Message.self)
                 Out.ok("cleared from the inbox")
@@ -407,6 +434,7 @@ enum Commands {
                 case "log":    return "ouro log \(id)"
                 case "diff":   return "ouro diff \(id)"
                 case "merge":  return "ouro merge \(id)"
+                case "rebase": return "ouro rebase \(id)"
                 case "undo":   return "ouro undo \(id)"
                 case "retry":  return "ouro retry \(id)"
                 case "fix":    return "ouro accept \(id)"

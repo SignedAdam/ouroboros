@@ -124,7 +124,7 @@ final class DigestTests: XCTestCase {
         let project = Project(id: "p", name: "p", path: repo, lastUsed: Date())
         let digest = Digests().digest(project, runs: [run])
         XCTAssertEqual(digest.issues.count, 1)
-        XCTAssertEqual(digest.issues.first?.state, .landed)
+        XCTAssertEqual(digest.issues.first?.state, .merged)
         // The id is the issue's, taken from where the file is NOW, so "mark
         // done" and "delete" hit something that exists.
         XCTAssertEqual(digest.issues.first?.id,
@@ -239,17 +239,17 @@ final class DigestTests: XCTestCase {
         XCTAssertEqual(tally.asking, 1)
         // The distinction the whole chip rests on: `succeeded` is two different
         // situations, and only one of them wants you.
-        XCTAssertEqual(tally.ready, 1)
-        XCTAssertEqual(tally.landed, 1)
+        XCTAssertEqual(tally.review, 1)
+        XCTAssertEqual(tally.merged, 1)
         XCTAssertEqual(tally.failed, 1)
         XCTAssertEqual(tally.filed, 1)
-        // Landed work is done with, so it is not part of the backlog the bar
+        // Merged work is done with, so it is not part of the backlog the bar
         // draws — but it is part of the total the tooltip reports.
         XCTAssertEqual(tally.open, 5)
         XCTAssertEqual(tally.total, 6)
         XCTAssertEqual(tally.yours, 3)
         XCTAssertEqual(tally.openStates.map(\.state),
-                       [.asking, .failed, .ready, .running, .filed])
+                       [.asking, .failed, .review, .running, .filed])
     }
 
     /// A daemon older than the tally sends none, and the panel has to render
@@ -325,5 +325,128 @@ final class SnapshotDecodingTests: XCTestCase {
         XCTAssertEqual(decoded.recents.first?.autonomy, .assist)
         XCTAssertEqual(decoded.stats.tape, [RunStatus.succeeded, .failed])
         XCTAssertEqual(decoded.stats.fixed, 2)
+    }
+}
+
+// MARK: - the words, and the verdict behind them
+
+/// `ready` became `review` and `landed` became `merged`, and `conflicts` was
+/// split out of `review`. The rename is cheap; the split is the point — a state
+/// must never be a verdict the code has not checked.
+final class WorkStateWordsTests: XCTestCase {
+
+    private func succeeded(merge: MergeVerdict? = nil, mergedInto: String? = nil) -> Run {
+        Run(id: "r", projectId: "p", projectName: "p", kind: .fix, agent: "claude",
+            title: "t", cwd: "/tmp", branch: "fix/t", base: "main", finish: .leave,
+            status: .succeeded, mergedInto: mergedInto, merge: merge)
+    }
+
+    private func verdict(clean: Bool, error: String? = nil) -> MergeVerdict {
+        MergeVerdict(base: "main", branch: "fix/t", baseSha: "aaa", branchSha: "bbb",
+                     clean: clean, conflicts: clean ? [] : ["a.swift"], error: error)
+    }
+
+    func testAVerifiedBranchThatStillMergesIsUpForReview() {
+        XCTAssertEqual(WorkState.of(succeeded(merge: verdict(clean: true))), .review)
+    }
+
+    /// The bug this document was written about: Ouroboros said `ready` about a
+    /// branch it had never tried to merge.
+    func testAVerifiedBranchThatNoLongerMergesSaysSo() {
+        XCTAssertEqual(WorkState.of(succeeded(merge: verdict(clean: false))), .conflicts)
+    }
+
+    /// "We could not tell" is not "it will not go in". An unanswered question
+    /// must never render as a failure — that is a verdict too.
+    func testAnUnaskableQuestionIsNotAConflict() {
+        let unknown = verdict(clean: false, error: "not a git repository")
+        XCTAssertEqual(WorkState.of(succeeded(merge: unknown)), .review)
+    }
+
+    /// No verdict at all — an older daemon, or a run nobody has tested yet.
+    func testNoVerdictReadsAsReview() {
+        XCTAssertEqual(WorkState.of(succeeded()), .review)
+    }
+
+    func testSomethingThatWentInIsMerged() {
+        XCTAssertEqual(WorkState.of(succeeded(mergedInto: "main")), .merged)
+    }
+
+    /// Runs written before the rename are on disk right now. Reading them has
+    /// to keep working, and it is exactly the compatibility that breaks quietly.
+    func testTheOldSpellingsStillDecode() throws {
+        XCTAssertEqual(try decodeState("\"ready\""), .review)
+        XCTAssertEqual(try decodeState("\"landed\""), .merged)
+        XCTAssertEqual(try decodeState("\"filed\""), .filed)
+    }
+
+    /// Leniency about two renames is not leniency about anything else.
+    func testAWordFromNeitherVocabularyIsStillAnError() {
+        XCTAssertThrowsError(try decodeState("\"almost\""))
+    }
+
+    private func decodeState(_ json: String) throws -> WorkState {
+        try JSONDecoder().decode(WorkState.self, from: Data(json.utf8))
+    }
+
+    /// The three states the drawer lifts to the top, and only those. `failed`
+    /// is left out on purpose: failed runs accumulate, and a group that is never
+    /// empty is a group nobody reads.
+    func testWhatCountsAsWaitingOnYou() {
+        XCTAssertEqual(Set(WorkState.allCases.filter(\.needsYou)),
+                       [.asking, .review, .conflicts])
+    }
+}
+
+// MARK: - delete removes
+
+final class DeletedIssueTests: XCTestCase {
+
+    /// The complaint, exactly: "i just deleted one of the older issues and it
+    /// wont vanish." It had a run behind it, and the run went on drawing the
+    /// sentence after the file was gone.
+    func testARunWhoseIssueWasDeletedIsNotDrawn() throws {
+        let repo = scratch("deleted")
+        let store = IssueStore(rootDir: repo)
+        let issue = try XCTUnwrap(store.write(title: "never mind", body: "…"))
+        let path = try XCTUnwrap(issue.path)
+        let run = Run(id: "r-1", projectId: "p", projectName: "p", kind: .fix, agent: "claude",
+                      title: "never mind", issuePath: path, cwd: repo,
+                      base: "main", finish: .leave, status: .succeeded)
+
+        let project = Project(id: "p", name: "p", path: repo, lastUsed: Date())
+        XCTAssertEqual(Digests().digest(project, runs: [run]).issues.count, 1)
+
+        try FileManager.default.removeItem(atPath: path)
+        XCTAssertTrue(Digests().digest(project, runs: [run]).issues.isEmpty)
+    }
+
+    /// `cancelled` is a state for a run somebody stopped, never for an issue.
+    /// An issue parked there by the old delete is not work, and the drawer does
+    /// not draw it.
+    func testACancelledIssueIsNotAStateTheDrawerShows() throws {
+        let repo = scratch("cancelled")
+        let store = IssueStore(rootDir: repo)
+        let issue = try XCTUnwrap(store.write(title: "the bright hairline", body: "…"))
+        let run = Run(id: "r-2", projectId: "p", projectName: "p", kind: .fix, agent: "claude",
+                      title: "the bright hairline", issuePath: issue.path, cwd: repo,
+                      base: "main", finish: .leave, status: .succeeded)
+        _ = store.setStatus(issue, .cancelled)
+
+        let project = Project(id: "p", name: "p", path: repo, lastUsed: Date())
+        let digest = Digests().digest(project, runs: [run])
+        XCTAssertTrue(digest.issues.isEmpty)
+        XCTAssertEqual(digest.openCount, 0)
+    }
+
+    /// A run that was never an issue has no file to lose, and must survive the
+    /// rule that drops the ones that do.
+    func testAFreeformRunIsUntouched() {
+        let repo = scratch("freeform")
+        let run = Run(id: "r-3", projectId: "p", projectName: "p", kind: .freeform,
+                      agent: "claude", title: "one-off", cwd: repo,
+                      base: "main", finish: .leave, status: .running)
+        let project = Project(id: "p", name: "p", path: repo, lastUsed: Date())
+        XCTAssertEqual(Digests().digest(project, runs: [run]).issues.map(\.title), ["one-off"])
     }
 }

@@ -32,6 +32,8 @@ func help() {
         ("  ouro diff <run>", "what it changed"),
         ("  ouro reply <run> \"use the second approach\"", "answer an agent's question"),
         ("  ouro merge <run> / undo <run>", "land it / take it back"),
+        ("  ouro rebase <run>", "put its branch back on top of its base"),
+        ("  ouro rm <issue-id>", "delete an issue — it goes"),
         ("  ouro stop <run> / retry <run> / ok <run>", ""),
         ("  ouro show <run>", "everything about one run, conversation id included"),
         ("  ouro resume <run>", "reopen that agent's conversation"),
@@ -86,7 +88,8 @@ case "runs", "ps":                    Commands.runs(args)
 case "log", "logs":                   Commands.log(args)
 case "diff":                          Commands.diff(args)
 case "merge-check", "mergecheck":     Commands.mergeCheck(args)
-case "reply", "stop", "merge", "undo", "retry", "ok", "drop", "ack":
+case "rm", "delete":                  Commands.deleteIssue(args)
+case "reply", "stop", "merge", "undo", "retry", "rebase", "ok", "drop", "ack":
                                       Commands.runAction(args.command, args)
 case "resume":                        Commands.resume(args)
 case "show":                          Commands.show(args)

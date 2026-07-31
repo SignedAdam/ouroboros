@@ -607,6 +607,34 @@ public final class Supervisor: @unchecked Sendable {
         return (runs.get(id), "reverted \(String(sha.prefix(8))) from \(run.base)")
     }
 
+    /// Put a run's branch back on top of its base.
+    ///
+    /// The verb `conflicts` offers instead of a merge the code has already
+    /// tested and knows will fail. It runs in the run's own worktree, where the
+    /// branch is already checked out, so nothing disturbs what you have open in
+    /// the repo. A run whose worktree has gone is rebased in the repo itself,
+    /// and only when that repo has nothing uncommitted to lose.
+    public func rebase(_ id: String) -> (ok: Bool, message: String) {
+        guard let run = runs.get(id), let project = registry.find(run.projectId) else {
+            return (false, "no such run")
+        }
+        guard let branch = run.branch else { return (false, "that run has no branch") }
+        let repo: String
+        if let worktree = run.worktreePath, FileManager.default.fileExists(atPath: worktree) {
+            repo = worktree
+        } else {
+            guard !Git(project.path).hasUncommittedTrackedChanges() else {
+                return (false, "you have uncommitted changes — commit or stash first")
+            }
+            repo = project.path
+        }
+        let result = Git(repo).rebase(branch: branch, onto: run.base)
+        // The verdict named two commits and one of them has just moved, so the
+        // next reader has to ask git again rather than reuse the old answer.
+        if result.ok { runs.mutate(id) { $0.merge = nil } }
+        return result
+    }
+
     @discardableResult
     public func stop(_ id: String) -> Run? {
         guard let run = runs.get(id) else { return nil }

@@ -57,6 +57,10 @@ final class QuickCaptureController: NSObject, NSWindowDelegate {
     init(model: AppModel) {
         self.model = model
         super.init()
+        // The only way anything below the panel can close it. A row verb that
+        // opens another window calls `handOff`, which ends up here; everything
+        // else leaves the panel exactly where it is. See `RowVerb`.
+        model.dismissCapture = { [weak self] in self?.hide() }
         let center = NotificationCenter.default
         center.addObserver(self, selector: #selector(screensChanged),
                            name: NSApplication.didChangeScreenParametersNotification, object: nil)
@@ -113,6 +117,12 @@ final class QuickCaptureController: NSObject, NSWindowDelegate {
         // parses as a slash command and dispatches nothing. Losing a half-typed
         // sentence is cheap; a capture that quietly does the wrong thing is not.
         model.draft = ""
+        // Same argument for the receipt: "copied the title" is about the panel
+        // you just closed, not the one you are about to open.
+        model.clearNote()
+        // And the options row, which is a detour you took once. The settings it
+        // wrote are on the project; the disclosure is not.
+        model.optionsOpen = false
 
         withAnimation(.easeOut(duration: CaptureMotion.outDuration)) { chrome.scale = CaptureMotion.exitScale }
         NSAnimationContext.runAnimationGroup { context in
@@ -290,12 +300,27 @@ final class QuickCaptureController: NSObject, NSWindowDelegate {
 
     @objc private func menuClosed() {
         menuDepth = max(0, menuDepth - 1)
+        // The menu took the keyboard for as long as it was up. If the panel is
+        // still here — which, after a verb that keeps it, is most of the time —
+        // the field wants it back, or the next thing you type goes nowhere.
+        if menuDepth == 0, let panel, panel.isVisible, !isClosing {
+            chrome.focusToken &+= 1
+        }
         // A menu can close because the user clicked straight into another app,
         // and the panel gets no second resignKey for that. Only act when we
         // really did lose the foreground — a menu dismissed normally hands key
         // back to the panel a beat later, and must not close it.
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 150_000_000)
+            // A verb ran, so this menu closed because something was picked from
+            // it. What happens to the panel is that verb's decision and
+            // `RowVerb.handsOff` has already made it — never a side effect of
+            // where the keyboard happened to land. Deciding this on
+            // `NSApp.isActive` alone is what made "Delete" sometimes take the
+            // whole panel with it: a nonactivating panel summoned over another
+            // app is perfectly usable without this app ever being the active
+            // one, and then every menu pick looked like a click somewhere else.
+            guard Date().timeIntervalSince(self.model.lastVerbAt) > 0.5 else { return }
             guard !NSApp.isActive else { return }
             self.dismissIfFocusLeft()
         }
@@ -326,8 +351,6 @@ struct QuickCaptureView: View {
     @ObservedObject var chrome: CaptureChrome
     @StateObject private var slash: SlashRunner
     var onClose: () -> Void
-    @State private var flash: String?
-    @State private var flashIsError = false
 
     init(model: AppModel, chrome: CaptureChrome, onClose: @escaping () -> Void) {
         self.model = model
@@ -374,6 +397,16 @@ struct QuickCaptureView: View {
             if chrome.slashSelection != 0 { chrome.slashSelection = 0 }
         }
         .onChange(of: slash.wizard?.id) { _, id in chrome.modalOpen = id != nil }
+        // A sheet, not a window: escape closes the diff and puts you back on
+        // this drawer with the same project still open, which is what §4 of the
+        // brief asks for and what a separate window could not do.
+        .onChange(of: model.showingDiff == nil) { _, gone in
+            chrome.modalOpen = !gone
+            if gone { chrome.focusToken &+= 1 }
+        }
+        .sheet(item: $model.showingDiff) { report in
+            DiffView(report: report) { model.showingDiff = nil }
+        }
         .sheet(item: $slash.wizard) { request in
             ProjectWizardSheet(request: request, model: model, onClose: { slash.wizard = nil })
         }
@@ -473,16 +506,23 @@ struct QuickCaptureView: View {
                         }
                     }
                     .help("this runs in the daemon — closing the panel will not stop it")
-                } else if let flash {
-                    Text(flash)
+                } else if let flash = model.flash {
+                    // The panel's one line of feedback, and now the only one: a
+                    // verb that keeps the panel open has to be able to say what
+                    // it did, or the click reads as having done nothing.
+                    Text(flash.text)
                         .font(.system(size: 11))
-                        .foregroundStyle(flashIsError
+                        .foregroundStyle(flash.bad
                                          ? Color(red: 1.0, green: 0.37, blue: 0.34)
                                          : ouroOrange)
                         .lineLimit(1)
+                        .fixedSize()
+                        .transition(.opacity)
                 }
 
                 Spacer()
+
+                optionsToggle
 
                 // Only what you can actually do this second.
                 //
@@ -496,26 +536,40 @@ struct QuickCaptureView: View {
                 // filed (`submit` refuses it), so filing is not offered, and
                 // the one hint nobody would ever discover is alone on the line.
                 // Type a character and it swaps for the two that are now true.
-                HStack(spacing: 14) {
-                    if !matches.isEmpty {
-                        hint("⏎", "run", accent: true)
-                        hint("⇥", "complete")
-                        hint("↑↓", "pick")
-                    } else if draftIsEmpty {
-                        hint("/", "commands")
-                    } else {
-                        hint("⏎", "file")
-                        hint("⌘⏎", "fix", accent: true)
+                // For the two seconds a receipt is up it gets the row to itself.
+                // The hints are a reference you can read at any time; "copied
+                // the ti…" is a sentence that failed halfway through, and a
+                // receipt nobody can read is worse than no receipt at all.
+                if model.flash == nil {
+                    HStack(spacing: 14) {
+                        if !matches.isEmpty {
+                            hint("⏎", "run", accent: true)
+                            hint("⇥", "complete")
+                            hint("↑↓", "pick")
+                        } else if draftIsEmpty {
+                            hint("/", "commands")
+                        } else {
+                            hint("⏎", "file")
+                            hint("⌘⏎", "fix", accent: true)
+                        }
                     }
+                    .animation(.easeOut(duration: 0.12), value: draftIsEmpty)
                 }
-                .animation(.easeOut(duration: 0.12), value: draftIsEmpty)
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
 
+            if model.optionsOpen { DispatchOptions(model: model) }
+
             // The invisible hotkey for "file and put an agent on it".
             Button("") { submit(fix: true) }
                 .keyboardShortcut(.return, modifiers: .command)
+                .opacity(0).frame(width: 0, height: 0)
+
+            // And for the options row. ⌘, is the one key on this platform that
+            // already means "the settings for the thing in front of you".
+            Button("") { toggleOptions() }
+                .keyboardShortcut(",", modifiers: .command)
                 .opacity(0).frame(width: 0, height: 0)
         }
         .background(.regularMaterial)
@@ -527,6 +581,29 @@ struct QuickCaptureView: View {
 
     private var draftIsEmpty: Bool {
         model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// The way in to the dispatch options, and the only cost they add to the
+    /// fast path: one chevron, no word. Collapsed every time the panel opens,
+    /// because the answers are remembered on the project and a row you have to
+    /// close again is a step the ⏎ path never asked for.
+    private var optionsToggle: some View {
+        Button(action: toggleOptions) {
+            Image(systemName: "chevron.up")
+                .font(.system(size: 8, weight: .black))
+                .rotationEffect(.degrees(model.optionsOpen ? 180 : 0))
+                .foregroundStyle(model.optionsOpen ? ouroOrange : Color.secondary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("dispatch options  ⌘,")
+    }
+
+    private func toggleOptions() {
+        withAnimation(.easeOut(duration: 0.13)) { model.optionsOpen.toggle() }
+        if model.optionsOpen { model.loadBranches() }
     }
 
     /// A key, drawn as a key, and what it does.
@@ -569,9 +646,7 @@ struct QuickCaptureView: View {
         if text.hasPrefix("/") {
             Task {
                 let handled = await slash.run(text)
-                let fallback: String? = handled ? nil : "not a command"
-                flashIsError = !handled
-                flash = slash.status ?? fallback
+                model.note(slash.status ?? (handled ? "done" : "not a command"), bad: !handled)
                 guard handled else { return }
                 model.draft = ""
                 // A wizard is a conversation, not a confirmation: its sheet needs
@@ -583,16 +658,145 @@ struct QuickCaptureView: View {
 
         let project = model.selectedProject?.name ?? ""
         model.file(fix: fix)
-        flashIsError = false
-        flash = fix ? "dispatched → \(project)" : "filed → \(project)"
+        model.note(fix ? "dispatched → \(project)" : "filed → \(project)")
         closeAfterFlash()
     }
 
     private func closeAfterFlash() {
-        // Close on a short beat so the confirmation is actually seen.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
-            flash = nil
-            onClose()
+        // Close on a short beat so the confirmation is actually seen. `hide`
+        // drops the note, so the next capture opens clean.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) { onClose() }
+    }
+}
+
+/// How the next dispatch out of this panel will be run: its own worktree or
+/// not, what happens when it passes, and what it branches off.
+///
+/// The engine has supported all three since the beginning and none of them was
+/// reachable while filing — the answers lived in `ouro projects set` and in a
+/// JSON file. So they are here, one row, closed until you ask for it with ⌘,.
+///
+/// It writes to the **project**, not to the capture, and that is the whole
+/// design: how a repo wants its fixes handled is a property of the repo, not of
+/// the sentence you happen to be typing. Answer once and every later capture
+/// into it inherits the answer. The defaults are exactly what they were, so ⏎
+/// and ⌘⏎ are the same two keystrokes they have always been.
+private struct DispatchOptions: View {
+    @ObservedObject var model: AppModel
+
+    private var project: Project? { model.selectedProject }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            if let project {
+                worktree(project)
+                finish(project)
+                base(project)
+            } else {
+                Text("no project")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 11)
+        .padding(.top, 1)
+        .transition(.opacity)
+    }
+
+    /// On by default, and the reason the gate can exist at all: an agent in its
+    /// own tree cannot touch what you have open. Off is for the small fixes
+    /// where a worktree costs more than it saves.
+    private func worktree(_ project: Project) -> some View {
+        let on = project.policy.worktreeDefault
+        return Button {
+            model.setOption(API.PatchProject(worktreeDefault: !on),
+                            note: on ? "fixes here run in the repo"
+                                     : "fixes here get their own worktree")
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: on ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 9.5, weight: .semibold))
+                Text("worktree")
+                    .font(.system(size: 10.5))
+            }
+            .foregroundStyle(on ? ouroOrange : Color.secondary)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("run the agent in its own checkout")
+    }
+
+    private func finish(_ project: Project) -> some View {
+        Menu {
+            ForEach([Finish.merge, .pr, .leave], id: \.self) { choice in
+                Button(DispatchOptions.word(choice)
+                       + (project.policy.finishDefault == choice ? "  ✓" : "")) {
+                    model.setOption(API.PatchProject(finishDefault: choice.rawValue),
+                                    note: DispatchOptions.receipt(choice))
+                }
+            }
+        } label: {
+            label("finish", DispatchOptions.word(project.policy.finishDefault))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("what happens when a fix passes the gate")
+    }
+
+    /// The branch a fix is cut from and merged back into. A list, not a field:
+    /// the repo already knows its branches, and a base you have to spell is a
+    /// base you can get wrong.
+    private func base(_ project: Project) -> some View {
+        Menu {
+            if model.branches.isEmpty {
+                Text("no branches")
+            }
+            ForEach(model.branches, id: \.self) { branch in
+                Button(branch + (currentBase(project) == branch ? "  ✓" : "")) {
+                    model.setOption(API.PatchProject(baseBranch: branch),
+                                    note: "off \(branch)")
+                }
+            }
+        } label: {
+            label("base", currentBase(project))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("the branch fixes here are cut from")
+    }
+
+    private func currentBase(_ project: Project) -> String {
+        project.baseBranch ?? model.branches.first ?? "main"
+    }
+
+    /// A quiet noun and the answer. The noun is not a label explaining itself —
+    /// three values on one line need to say which is which.
+    private func label(_ noun: String, _ value: String) -> some View {
+        HStack(spacing: 5) {
+            Text(noun)
+                .font(.system(size: 10.5))
+                .foregroundStyle(.tertiary)
+            Text(value)
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    static func word(_ finish: Finish) -> String {
+        switch finish {
+        case .merge: return "merge"
+        case .pr:    return "pull request"
+        case .leave: return "leave it"
+        }
+    }
+
+    static func receipt(_ finish: Finish) -> String {
+        switch finish {
+        case .merge: return "verified fixes here will merge themselves"
+        case .pr:    return "verified fixes here open a pull request"
+        case .leave: return "fixes here wait on their branch"
         }
     }
 }

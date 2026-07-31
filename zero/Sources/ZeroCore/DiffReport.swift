@@ -14,8 +14,10 @@ import Foundation
 /// is meaningless without its operands: `main...branch` said one thing before
 /// the branch was rebased and another after, and both answers were correct at
 /// the moment they were given.
-public struct DiffReport: Codable, Sendable, Equatable {
+public struct DiffReport: Codable, Sendable, Equatable, Identifiable {
     public var runId: String
+    /// One report per run, which is the identity a sheet keyed on it needs.
+    public var id: String { runId }
     /// The refs as the run recorded them, for reading.
     public var base: String
     public var branch: String

@@ -44,7 +44,11 @@ struct DiffView: View {
                 }
             }
         }
-        .frame(minWidth: 720, idealWidth: 900, minHeight: 420, idealHeight: 560)
+        // Sized to sit on the capture panel, which is 560 wide. Wider than its
+        // parent, because a diff needs the width and a sheet may have it — but
+        // not so much wider that the panel disappears underneath it.
+        .frame(minWidth: 660, idealWidth: 760, maxWidth: 1100,
+               minHeight: 380, idealHeight: 520)
         .background(.regularMaterial)
         // Escape, and a button rather than `onKeyPress` so it works whatever
         // has focus inside the scroll views.
@@ -133,7 +137,7 @@ struct DiffView: View {
             }
             .padding(.bottom, 10)
         }
-        .frame(width: 270)
+        .frame(width: 236)
     }
 
     private func rule(_ word: String) -> some View {
@@ -159,16 +163,24 @@ struct DiffView: View {
             } else if file.hunks.isEmpty {
                 note(file.change == .renamed ? "renamed, no edits" : "no changes")
             } else {
-                // Both axes: code does not wrap, and a wrapped diff line stops
-                // being a diff line. Vertical outside, horizontal inside, so the
-                // gutter stays put while a long line scrolls under it.
-                ScrollView(.vertical) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        ForEach(file.hunks) { hunk in
-                            HunkView(hunk: hunk)
+                // Both axes on one scroll view, not a horizontal one per hunk.
+                // Code does not wrap — a wrapped diff line stops being a diff
+                // line — and every hunk in a file has to move together: two
+                // hunks at different horizontal offsets are two different
+                // claims about where the edit is.
+                //
+                // The pane's width is measured and handed down, so a short line
+                // still gets a full-width tint and a hunk header still reads as
+                // a band rather than as a label the length of its own text.
+                GeometryReader { geo in
+                    ScrollView([.vertical, .horizontal]) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(file.hunks) { hunk in
+                                HunkView(hunk: hunk, span: geo.size.width)
+                            }
                         }
+                        .padding(.bottom, 8)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         } else {
@@ -232,7 +244,7 @@ private struct FileRow: View {
         .help(file.oldPath.map { "\($0) → \(file.path)" } ?? file.path)
     }
 
-    /// The last two components. A column 270 points wide cannot show
+    /// The last two components. A column this narrow cannot show
     /// `zero/Sources/ZeroApp/Resources/…` and the filename is what you scan.
     private var name: String {
         let parts = file.path.split(separator: "/")
@@ -271,6 +283,9 @@ private struct FileRow: View {
 
 private struct HunkView: View {
     let hunk: DiffHunk
+    /// The width of the pane this is scrolling inside, so a band is a band even
+    /// when its own content is two words long.
+    let span: CGFloat
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -285,27 +300,27 @@ private struct HunkView: View {
                         .font(.system(size: 9.5))
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
+                        .fixedSize()
                 }
-                Spacer(minLength: 0)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 4)
-            .background(Color.primary.opacity(0.04))
+            .frame(minWidth: span, alignment: .leading)
+            .background(Color.primary.opacity(0.05))
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(hunk.lines) { line in
-                        LineView(line: line)
-                    }
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(hunk.lines) { line in
+                    LineView(line: line, span: span)
                 }
-                .padding(.vertical, 2)
             }
+            .padding(.vertical, 2)
         }
     }
 }
 
 private struct LineView: View {
     let line: DiffLine
+    let span: CGFloat
 
     var body: some View {
         HStack(spacing: 0) {
@@ -322,10 +337,13 @@ private struct LineView: View {
                                  ? Color.primary.opacity(0.6) : Color.primary.opacity(0.92))
                 .fixedSize(horizontal: true, vertical: false)
                 .textSelection(.enabled)
-
-            Spacer(minLength: 14)
+                .padding(.trailing, 14)
         }
         .padding(.vertical, 0.5)
+        // A short line still gets the full width of the pane tinted; without
+        // this the wash stops where the text does and the block of added lines
+        // reads as a ragged edge instead of a block.
+        .frame(minWidth: span, alignment: .leading)
         .background(background)
     }
 

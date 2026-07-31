@@ -21,8 +21,37 @@ final class AppModel: ObservableObject {
     /// The issue just filed, so the confirmation can offer verbs for it.
     @Published var lastFiled: IssueDTO?
 
+    /// The one line of feedback the capture panel shows. See `note(_:bad:)`.
+    @Published private(set) var flash: Flash?
+
+    /// Rows acting out their own removal, and rows that have finished.
+    ///
+    /// Deleting used to be invisible: the row was there, and then a poll came
+    /// back up to two seconds later without it. `leaving` says "play the exit";
+    /// `vanished` says "don't draw this again", and hands the row back if the
+    /// daemon never actually removed it. See `Vanished`.
+    @Published private(set) var leaving: Set<String> = []
+    @Published private(set) var vanished = Vanished()
+
+    /// The branch a `diff` verb asked for. The capture panel puts it up as a
+    /// sheet, so escape lands you back on the drawer with the same project open.
+    @Published var showingDiff: DiffReport?
+
+    /// How a row verb asks the capture panel to step aside. Set by the
+    /// controller that owns that panel; nil everywhere else, because the
+    /// menu-bar popover closes itself and has no window to hide.
+    var dismissCapture: (() -> Void)?
+
+    /// The capture panel's options row: worktree, finish, base. Collapsed by
+    /// default so the fast path is exactly as long as it was.
+    @Published var optionsOpen = false
+    /// The branches of the selected project, fetched once when the options row
+    /// opens. Empty until then; the menu falls back to the base it already has.
+    @Published private(set) var branches: [String] = []
+
     private let client = ZeroClient()
     private var timer: Timer?
+    private var flashToken = 0
 
     var projects: [Project] { snapshot?.projects ?? [] }
     var recents: [ProjectDigest] { snapshot?.recents ?? [] }
@@ -92,8 +121,17 @@ final class AppModel: ObservableObject {
             await MainActor.run { [weak self] in
                 guard let self else { return }
                 if let result {
-                    self.snapshot = result
                     self.connected = true
+                    // A row cannot act out its own exit while the list under it
+                    // is being replaced. The daemon has already deleted the
+                    // issue by the time the exit starts, so the very next poll
+                    // comes back without it — and dropping the row mid-fold is
+                    // exactly the blink this whole change exists to remove.
+                    // `vanish` owns those 400ms and refreshes at the end of
+                    // them, so no snapshot is lost and nothing can stall here.
+                    guard self.leaving.isEmpty else { return }
+                    self.snapshot = result
+                    self.forgetDeparted()
                     // Terminal runs the app has not announced yet get a toast.
                     ToastCenter.shared.observe(result.recentRuns + result.activeRuns)
                 } else {
@@ -133,6 +171,160 @@ final class AppModel: ObservableObject {
             .appendingPathComponent("ourod")
         if FileManager.default.isExecutableFile(atPath: sibling) { return sibling }
         return Shell.which("ourod")
+    }
+
+    // MARK: - what a verb does to the panel
+
+    /// When a row verb last ran. A context menu that closes right after one
+    /// closed *because something was chosen from it* — which is not the same
+    /// event as clicking away, and the panel must not confuse the two.
+    private(set) var lastVerbAt = Date.distantPast
+
+    /// Run a row verb and then do to the panel whatever that verb does to it.
+    ///
+    /// Every verb in the drawer goes through here, so the decision lives in
+    /// `RowVerb` — one table, covered by a test — rather than in whether some
+    /// menu item remembered to call `handOff`.
+    func perform(_ verb: RowVerb, _ action: () -> Void) {
+        lastVerbAt = Date()
+        action()
+        if verb.handsOff { handOff(after: verb.beat) }
+    }
+
+    /// The panel steps aside because another window is about to take the
+    /// screen. `beat` is the pause that lets a confirmation be read first.
+    func handOff(after beat: Double = 0) {
+        guard let dismissCapture else { return }
+        guard beat > 0 else { return dismissCapture() }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(beat * 1_000_000_000))
+            dismissCapture()
+        }
+    }
+
+    /// Leave a one-line receipt for a verb that would otherwise leave no mark —
+    /// a copy, a merge the daemon does in the background, a delete that failed.
+    /// It clears itself: the capture box is not a log.
+    func note(_ text: String, bad: Bool = false) {
+        flashToken &+= 1
+        let mine = flashToken
+        flash = Flash(text: text, bad: bad)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_400_000_000)
+            guard flashToken == mine else { return }
+            flash = nil
+        }
+    }
+
+    /// Drop the receipt now — the panel is closing, and a stale line of text
+    /// should not be the first thing the next capture says.
+    func clearNote() {
+        flashToken &+= 1
+        flash = nil
+    }
+
+    // MARK: - rows leaving
+
+    /// Play a row's exit. Called only once the daemon has said yes, so the
+    /// animation reports what happened rather than guessing at it.
+    private func vanish(_ id: String) {
+        // Deliberately no `withAnimation`: the row owns its own exit, and the
+        // timings here only have to outlast it.
+        leaving.insert(id)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 420_000_000)   // struck, then folded
+            // In one step, so the row is never both finished leaving and still
+            // freezing the snapshot: `leaving` holds `refresh` off while the
+            // exit plays, and `vanished` keeps the row out of the list after.
+            vanished.hide(id)
+            leaving.remove(id)
+            try? await Task.sleep(nanoseconds: 120_000_000)
+            refresh()
+        }
+    }
+
+    /// Put the hidden rows back in line with what the daemon says exists —
+    /// including handing one back if it turns out to still be there.
+    private func forgetDeparted() {
+        guard !vanished.isEmpty else { return }
+        var live = Set(projects.map(\.id))
+        for digest in recents {
+            live.insert(digest.id)
+            live.formUnion(digest.issues.map(\.id))
+        }
+        vanished.reconcile(live: live)
+    }
+
+    func isLeaving(_ id: String) -> Bool { leaving.contains(id) }
+
+    /// The projects the drawer draws: what the daemon lists, minus anything
+    /// whose exit has already finished playing.
+    var visibleRecents: [ProjectDigest] { vanished.visible(recents) }
+
+    /// The same, for one project's work.
+    func issues(of digest: ProjectDigest) -> [IssuePip] { vanished.visible(digest.issues) }
+
+    /// What an opened project draws, which is its work minus whatever the group
+    /// at the top of the drawer has already lifted out of it.
+    ///
+    /// Lifting a row out means taking it out. Drawing it in both places puts the
+    /// same sentence on screen twice, two inches apart, and then the group is
+    /// not a summary of anything — it is a duplicate you have to learn to skip.
+    func remainingIssues(of digest: ProjectDigest) -> [IssuePip] {
+        let lifted = Set(waitingOnYou.map(\.id))
+        return issues(of: digest).filter { !lifted.contains($0.id) }
+    }
+
+    /// The `n filed` on the project row, dropped by hand for the ones already
+    /// deleted — a row that still says 3 over two issues is the same lie the
+    /// delayed poll used to tell.
+    func openCount(of digest: ProjectDigest) -> Int {
+        let gone = digest.issues.filter { $0.state == .filed && vanished.contains($0.id) }
+        return max(0, digest.openCount - gone.count)
+    }
+
+    // MARK: - what needs you, across every project
+
+    /// One row of the group at the top of the drawer.
+    struct Waiting: Identifiable {
+        var pip: IssuePip
+        var project: String
+        var id: String { pip.id }
+    }
+
+    /// Every piece of work waiting on a person, across all projects.
+    ///
+    /// Read off the inbox, which is `Inbox.build` — the same function `ouro
+    /// inbox` prints — so the drawer and the CLI cannot come to different
+    /// conclusions about what is waiting. The digests supply the row itself,
+    /// because an inbox item is a decision and a row is an object you can act
+    /// on, and this group has to be both.
+    var waitingOnYou: [Waiting] {
+        var byRun: [String: Waiting] = [:]
+        for digest in visibleRecents {
+            for pip in issues(of: digest) {
+                guard let runId = pip.runId else { continue }
+                byRun[runId] = Waiting(pip: pip, project: digest.name)
+            }
+        }
+        // `merged` is a receipt and `failed` is a pile that never empties;
+        // neither is a thing standing between you and a decision. What is left
+        // is the question, the review, and the review that will not go in.
+        return inbox.compactMap { item -> Waiting? in
+            guard item.kind == .question || item.kind == .review else { return nil }
+            guard let runId = item.runId else { return nil }
+            if let known = byRun[runId] { return known }
+            // In the inbox but not in the drawer: the project fell off the
+            // recents list, which is a display cap and not a reason to hide
+            // something waiting on you. Build the row from the run itself.
+            guard let run = run(runId) else { return nil }
+            return Waiting(pip: IssuePip(id: run.id, title: run.title,
+                                         state: WorkState.of(run),
+                                         at: run.endedAt ?? run.queuedAt,
+                                         path: run.issuePath, runId: run.id,
+                                         agent: run.agent),
+                           project: run.projectName)
+        }
     }
 
     // MARK: - actions
@@ -251,10 +443,29 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Hiding and forgetting both take a row off the drawer, so both wait for
+    /// the daemon and then let the row leave on screen. A failure says so
+    /// instead of playing an exit for something that is still there.
+    func hideProject(_ id: String) {
+        Task { [client] in
+            let ok = await Task.detached {
+                (try? client.patch("/v1/projects/\(id)", API.PatchProject(hidden: true),
+                                   as: ZeroClient.Empty.self)) != nil
+            }.value
+            guard ok else { return note("could not hide that one", bad: true) }
+            note("hidden until it's active again")
+            vanish(id)
+        }
+    }
+
     func forgetProject(_ id: String) {
-        Task.detached { [client] in
-            _ = try? client.delete("/v1/projects/\(id)", as: API.Message.self)
-            await MainActor.run { [weak self] in self?.refresh() }
+        Task { [client] in
+            let ok = await Task.detached {
+                (try? client.delete("/v1/projects/\(id)", as: ZeroClient.Empty.self)) != nil
+            }.value
+            guard ok else { return note("could not remove that one", bad: true) }
+            note("removed from Ouroboros")
+            vanish(id)
         }
     }
 
@@ -270,10 +481,16 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// The round trip is a unix socket to a process on this machine — a few
+    /// milliseconds — so waiting for it costs nothing and buys the difference
+    /// between an animation that reports a deletion and one that predicts it.
     func deleteIssue(_ issueId: String) {
-        Task.detached { [client] in
-            _ = try? client.delete("/v1/issues/\(issueId)", as: API.Message.self)
-            await MainActor.run { [weak self] in self?.refresh() }
+        Task { [client] in
+            let ok = await Task.detached {
+                (try? client.delete("/v1/issues/\(issueId)", as: ZeroClient.Empty.self)) != nil
+            }.value
+            guard ok else { return note("could not delete that one", bad: true) }
+            vanish(issueId)
         }
     }
 
@@ -318,12 +535,95 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func openLog(_ runId: String) { RowActions.copy("ouro log \(runId) -f"); status = "copied: ouro log \(runId) -f" }
-    func showDiff(_ runId: String) { RowActions.copy("ouro diff \(runId)"); status = "copied: ouro diff \(runId)" }
+    func openLog(_ runId: String) { copyCommand("ouro log \(runId) -f") }
+    func showDiff(_ runId: String) { copyCommand("ouro diff \(runId)") }
+
+    /// The log and the diff-as-text are commands to paste, not windows to open —
+    /// which is exactly why they leave the panel up and say what they did.
+    private func copyCommand(_ command: String) {
+        RowActions.copy(command)
+        status = "copied: \(command)"
+        note("copied: \(command)")
+    }
+
+    /// The run's log, live, in a terminal of its own — `ouro log <run> -f`, the
+    /// product's own verb rather than anything this app knows how to do.
+    func watchRun(_ runId: String) {
+        Task.detached {
+            Shell.run(["/Applications/Ghostty.app/Contents/MacOS/ghostty",
+                       "--title=ouro log", "-e", "zsh", "-lc",
+                       "ouro log \(Shell.quote(runId)) -f"], login: true)
+        }
+    }
+
+    /// Answering is a sentence, and there is a field for sentences right here.
+    /// The verb loads `/reply <run>` into it rather than opening a second box
+    /// to type in, so ⏎ sends it down the same slash-command path the CLI uses.
+    func startReply(to runId: String) {
+        draft = "/reply \(runId) "
+        note("type the answer, then ⏎")
+    }
+
+    /// Put the branch back on top of its base, so a run whose verdict came back
+    /// `conflicts` has somewhere to go that is not a merge known to fail.
+    func rebaseRun(_ runId: String) {
+        note("rebasing…")
+        Task { [client] in
+            let reply = await Task.detached {
+                try? client.post("/v1/runs/\(runId)/rebase", as: API.Message.self)
+            }.value
+            guard let reply else { return note("could not rebase that one", bad: true) }
+            note(reply.message, bad: !reply.ok)
+            refresh()
+        }
+    }
+
+    /// What the agent actually did, as data. Presented as a sheet on the
+    /// capture panel, so escape puts the drawer back exactly as it was.
+    func openDiff(_ runId: String) {
+        Task { [client] in
+            let report = await Task.detached {
+                try? client.get("/v1/runs/\(runId)/diff", as: DiffReport.self)
+            }.value
+            guard let report else { return note("no diff for that one", bad: true) }
+            showingDiff = report
+        }
+    }
+
+    // MARK: - dispatch options
+
+    /// Read the branches of the project the capture is aimed at, once, when the
+    /// options row opens. Cheap, and it means `base` is a list to pick from
+    /// rather than a name you have to spell.
+    func loadBranches() {
+        guard let project = selectedProject else { return }
+        Task { [client] in
+            let list = await Task.detached {
+                try? client.get("/v1/projects/\(project.id)/branches", as: API.BranchList.self)
+            }.value
+            branches = list?.branches ?? []
+        }
+    }
+
+    /// The options are the project's own defaults, so they are remembered where
+    /// every other face of the product can already read them: on the project.
+    /// The next capture into it inherits the answer, which is the point — this
+    /// is a property of the project, not of the moment.
+    func setOption(_ patch: API.PatchProject, note text: String) {
+        guard let project = selectedProject else { return }
+        patchProject(project.id, patch)
+        note(text)
+    }
 
     func openWorktree(_ runId: String) {
         guard let run = (activeRuns + recentRuns).first(where: { $0.id == runId }),
               let path = run.worktreePath else { return }
+        open(path: path)
+    }
+
+    /// Hand a path to whatever app owns it. Paired with `RowVerb.handsOff`,
+    /// which is what gets the panel out of that app's way.
+    func open(path: String) {
         NSWorkspace.shared.open(URL(fileURLWithPath: path))
     }
 
@@ -345,8 +645,15 @@ final class AppModel: ObservableObject {
     }
 
     func openInFinder(_ project: Project) {
-        NSWorkspace.shared.open(URL(fileURLWithPath: project.path))
+        open(path: project.path)
     }
+}
+
+/// One line of feedback in the capture panel: what a verb did, or why it
+/// couldn't. See `AppModel.note(_:bad:)`.
+struct Flash: Equatable {
+    var text: String
+    var bad = false
 }
 
 extension Run {
@@ -391,9 +698,11 @@ extension WorkState {
         case .queued:   return Color.secondary
         case .running:  return Color(red: 1.0, green: 0.48, blue: 0.09)
         case .asking:   return Color(red: 1.0, green: 0.74, blue: 0.18)
-        case .ready:    return Color(red: 0.47, green: 0.67, blue: 1.0)
-        case .landed:   return Color(red: 0.49, green: 0.85, blue: 0.34)
-        case .failed:   return Color(red: 1.0, green: 0.37, blue: 0.34)
+        case .review:   return Color(red: 0.47, green: 0.67, blue: 1.0)
+        case .merged:   return Color(red: 0.49, green: 0.85, blue: 0.34)
+        // Tinted like the failure it is. A branch that will not go in is not a
+        // milder kind of review, it is work that has to be done again.
+        case .conflicts, .failed: return Color(red: 1.0, green: 0.37, blue: 0.34)
         }
     }
 

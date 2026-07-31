@@ -28,6 +28,11 @@ public struct Pulse: Codable, Sendable, Equatable {
 /// was invisible from outside: the same sentence appeared under a different
 /// heading depending on whether an agent had been started, and neither heading
 /// said so.
+/// The words changed once and both renames were the same fix: a state has to
+/// say who it is waiting on. `ready` never said "waiting on you", and `landed`
+/// was jargon for the thing everyone already calls a merge. `Kind.canonical`
+/// in `InboxItem` translates the old spellings on the wire; this enum does the
+/// same for anything a daemon or a run file wrote before the rename.
 public enum WorkState: String, Codable, Sendable, CaseIterable {
     /// Written down and never handed to anyone. These are the ones that rot.
     case filed
@@ -35,12 +40,36 @@ public enum WorkState: String, Codable, Sendable, CaseIterable {
     case running
     /// The agent stopped and asked something.
     case asking
-    /// Verified, sitting on its branch, waiting for permission to land.
-    case ready
-    case landed
+    /// Verified, sitting on its branch, and it still merges.
+    case review
+    /// Verified, and its branch no longer goes into its base. Its own state,
+    /// because offering `merge` on it would be a verdict the code has checked
+    /// and contradicted.
+    case conflicts
+    case merged
     case failed
     /// Stopped by a human.
     case stopped
+
+    /// The two words that were renamed, read leniently. Anything else is still
+    /// an error: forgiving two renames is not forgiving typos.
+    public static func canonical(_ raw: String) -> String {
+        switch raw {
+        case "ready":  return WorkState.review.rawValue
+        case "landed": return WorkState.merged.rawValue
+        default:       return raw
+        }
+    }
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        guard let state = WorkState(rawValue: WorkState.canonical(raw)) else {
+            throw DecodingError.dataCorruptedError(
+                in: try decoder.singleValueContainer(),
+                debugDescription: "unknown work state '\(raw)'")
+        }
+        self = state
+    }
 
     public static func of(_ run: Run) -> WorkState {
         switch run.status {
@@ -52,7 +81,11 @@ public enum WorkState: String, Codable, Sendable, CaseIterable {
         // The same test the inbox uses, so the drawer and `ouro inbox` can never
         // disagree about whether a fix actually landed.
         case .succeeded:
-            return (run.mergedInto != nil || run.result?.prUrl != nil) ? .landed : .ready
+            if run.mergedInto != nil || run.result?.prUrl != nil { return .merged }
+            // Only a verdict the code actually took. `error != nil` is "we could
+            // not tell", and that must never render as "it will not go in".
+            if let verdict = run.merge, !verdict.clean, verdict.error == nil { return .conflicts }
+            return .review
         }
     }
 
@@ -65,18 +98,25 @@ public enum WorkState: String, Codable, Sendable, CaseIterable {
         self == .queued || self == .running || self == .asking
     }
 
+    /// Waiting on a person, and on this person. What the drawer lifts to the top
+    /// and what `ouro inbox` prints.
+    public var needsYou: Bool {
+        self == .asking || self == .review || self == .conflicts
+    }
+
     /// Order within a project: what is moving, then what is waiting on you,
     /// then what was only ever written down, then what is finished with.
     public var rank: Int {
         switch self {
-        case .asking:  return 0
-        case .running: return 1
-        case .queued:  return 2
-        case .ready:   return 3
-        case .failed:  return 4
-        case .filed:   return 5
-        case .landed:  return 6
-        case .stopped: return 7
+        case .asking:    return 0
+        case .running:   return 1
+        case .queued:    return 2
+        case .review:    return 3
+        case .conflicts: return 4
+        case .failed:    return 5
+        case .filed:     return 6
+        case .merged:    return 7
+        case .stopped:   return 8
         }
     }
 }
@@ -124,8 +164,9 @@ public struct Tally: Codable, Sendable, Equatable {
     public var queued = 0
     public var running = 0
     public var asking = 0
-    public var ready = 0
-    public var landed = 0
+    public var review = 0
+    public var conflicts = 0
+    public var merged = 0
     public var failed = 0
     public var stopped = 0
 
@@ -140,53 +181,56 @@ public struct Tally: Codable, Sendable, Equatable {
         queued = try c.decodeIfPresent(Int.self, forKey: .queued) ?? 0
         running = try c.decodeIfPresent(Int.self, forKey: .running) ?? 0
         asking = try c.decodeIfPresent(Int.self, forKey: .asking) ?? 0
-        ready = try c.decodeIfPresent(Int.self, forKey: .ready) ?? 0
-        landed = try c.decodeIfPresent(Int.self, forKey: .landed) ?? 0
+        review = try c.decodeIfPresent(Int.self, forKey: .review) ?? 0
+        conflicts = try c.decodeIfPresent(Int.self, forKey: .conflicts) ?? 0
+        merged = try c.decodeIfPresent(Int.self, forKey: .merged) ?? 0
         failed = try c.decodeIfPresent(Int.self, forKey: .failed) ?? 0
         stopped = try c.decodeIfPresent(Int.self, forKey: .stopped) ?? 0
     }
 
     public mutating func add(_ state: WorkState) {
         switch state {
-        case .filed:   filed += 1
-        case .queued:  queued += 1
-        case .running: running += 1
-        case .asking:  asking += 1
-        case .ready:   ready += 1
-        case .landed:  landed += 1
-        case .failed:  failed += 1
-        case .stopped: stopped += 1
+        case .filed:     filed += 1
+        case .queued:    queued += 1
+        case .running:   running += 1
+        case .asking:    asking += 1
+        case .review:    review += 1
+        case .conflicts: conflicts += 1
+        case .merged:    merged += 1
+        case .failed:    failed += 1
+        case .stopped:   stopped += 1
         }
     }
 
     public func count(of state: WorkState) -> Int {
         switch state {
-        case .filed:   return filed
-        case .queued:  return queued
-        case .running: return running
-        case .asking:  return asking
-        case .ready:   return ready
-        case .landed:  return landed
-        case .failed:  return failed
-        case .stopped: return stopped
+        case .filed:     return filed
+        case .queued:    return queued
+        case .running:   return running
+        case .asking:    return asking
+        case .review:    return review
+        case .conflicts: return conflicts
+        case .merged:    return merged
+        case .failed:    return failed
+        case .stopped:   return stopped
         }
     }
 
-    /// Still wants something from someone. A landed fix and an abandoned run
+    /// Still wants something from someone. A merged fix and an abandoned run
     /// are finished with, and a backlog that counts them is a backlog that only
     /// ever grows.
-    public var open: Int { filed + queued + running + asking + ready + failed }
+    public var open: Int { filed + queued + running + asking + review + conflicts + failed }
 
-    public var total: Int { open + landed + stopped }
+    public var total: Int { open + merged + stopped }
 
-    /// Waiting on *you* specifically — a question, a review, a failure. The
-    /// three states worth interrupting someone for.
-    public var yours: Int { asking + ready + failed }
+    /// Waiting on *you* specifically — a question, a review, a branch that no
+    /// longer merges, a failure. The states worth interrupting someone for.
+    public var yours: Int { asking + review + conflicts + failed }
 
     /// Open states with something in them, most urgent first. What a bar draws
     /// and what a summary reads.
     public var openStates: [(state: WorkState, count: Int)] {
-        [WorkState.asking, .failed, .ready, .running, .queued, .filed]
+        [WorkState.asking, .failed, .conflicts, .review, .running, .queued, .filed]
             .map { ($0, count(of: $0)) }
             .filter { $0.1 > 0 }
     }
@@ -408,8 +452,13 @@ public final class Digests: @unchecked Sendable {
         // path a run recorded at dispatch goes stale the moment a fix lands.
         // The basename survives the move, and is what still ties a finished run
         // back to the issue it is about.
+        //
+        // `cancelled` is left out on purpose. It is a state for a run somebody
+        // stopped, never for an issue, and the drawer does not draw it: an issue
+        // parked there before delete learned to remove is not work, and a row
+        // that keeps showing it is the bug this rule exists to close.
         var byName: [String: Filed] = [:]
-        for filed in facts.issues {
+        for filed in facts.issues where filed.status != .cancelled {
             let name = (filed.path as NSString).lastPathComponent
             if byName[name] == nil { byName[name] = filed }
         }
@@ -422,6 +471,12 @@ public final class Digests: @unchecked Sendable {
         var covered: Set<String> = []
         for run in mine {
             let name = run.issuePath.map { ($0 as NSString).lastPathComponent }
+            // The issue this run is about has been erased. Delete removes, so
+            // the row goes with it — otherwise deleting an issue that had ever
+            // been dispatched left the run behind, still drawing the sentence
+            // you had just thrown away. A freeform run has no issue file and is
+            // never caught by this.
+            if let name, byName[name] == nil { continue }
             let key = name ?? run.id
             if let index = seen[key] {
                 pips[index].attempts += 1

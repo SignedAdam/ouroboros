@@ -62,6 +62,17 @@ public enum API {
         }
     }
 
+    /// A project's local branches, so the capture panel can offer `base` as a
+    /// list to pick from instead of a name you have to spell correctly.
+    public struct BranchList: Codable, Sendable {
+        public var branches: [String]
+        /// What the project dispatches against today.
+        public var base: String
+        public init(branches: [String], base: String) {
+            self.branches = branches; self.base = base
+        }
+    }
+
     public struct DiscoverRequest: Codable, Sendable {
         public var root: String
         public init(root: String) { self.root = root }

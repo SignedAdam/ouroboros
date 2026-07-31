@@ -63,7 +63,7 @@ Five kinds of item, and nothing else — decisions only, never status:
 |---|---|
 | `needs you` | an agent stopped and asked a question → `ouro reply <run> "…"` |
 | `failed` | the run or the gate went red → `ouro log` / `ouro retry` |
-| `review` | verified and waiting for you → `ouro merge <run>` |
+| `review` | verified, still merges, waiting for you → `ouro merge <run>` |
 | `merged` | merged or PR open → `ouro diff` / `ouro undo` |
 | `proposal` | an AI operator suggested work → `ouro accept` / `ouro dismiss` |
 
@@ -81,6 +81,8 @@ ouro runs -w                           live table of every agent
 ouro log <run> -f  ·  ouro diff <run> [--json]
 ouro reply <run> "…" [-a codex]        answer a question, optionally switch harness
 ouro merge <run>  ·  ouro undo <run>  ·  ouro stop <run>  ·  ouro retry <run>
+ouro rebase <run>                      put its branch back on top of its base
+ouro rm <issue-id> [--keep]            delete an issue; --keep only cancels it
 ouro merge-check <run>                 would this branch still go in?
 ouro inbox
 ouro idea "…"  ·  ouro ideas  ·  ouro promote <id> -p proj [--fix]
@@ -98,6 +100,14 @@ an unknown repo on the spot. It should work the first time you type it in a new 
 
 ⌥Space from anywhere opens one field on the screen the mouse is on. ⏎ files what you
 typed, ⌘⏎ files it and dispatches an agent, `esc` closes it.
+
+⌘, opens the dispatch options — worktree on/off, what happens when a fix passes, and
+the branch it comes off. Closed every time, and the answers are kept on the project,
+so answering once is answering for good and the ⏎ path never grows a step.
+
+The drawer under it lists your projects, and lifts everything waiting on a person —
+`needs you`, `review`, `conflicts` — into a group above them. That group is the same
+set `ouro inbox` prints. When nothing is waiting it takes no room at all.
 
 The combo is `hotkey` in `~/.ouroboros/config.json` — default `opt+space`, and it has to
 carry at least one modifier. macOS gives no way to ask whether another app already owns a
@@ -222,7 +232,7 @@ truth; everything else is a cache.
 ## Development
 
 ```bash
-swift test        # 42 tests
+swift test        # 223 tests
 make build        # release binaries
 make app          # the .app bundle
 ```

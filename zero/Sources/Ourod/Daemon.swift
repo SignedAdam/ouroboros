@@ -231,6 +231,12 @@ final class Daemon: @unchecked Sendable {
             guard let project = registry.find(path[1]) else { return .error("no such project", status: 404) }
             return .json(API.IssueList(issues: issues.list(project: project)))
 
+        case ("GET", 3) where path[2] == "branches":
+            guard let project = registry.find(path[1]) else { return .error("no such project", status: 404) }
+            let git = Git(project.path)
+            return .json(API.BranchList(branches: git.localBranches,
+                                        base: project.baseBranch ?? git.defaultBranch))
+
         default:
             return .error("no route", status: 404)
         }
@@ -417,17 +423,32 @@ final class Daemon: @unchecked Sendable {
             guard let (project, issue) = issues.find(path[1]) else {
                 return .error("no such issue", status: 404)
             }
-            // Cancelled, not erased: the trail from "half a thought at midnight"
-            // to "never mind" is worth as much as the one that ends in a fix.
-            // `?purge=1` is the one that really deletes the file.
-            if request.q("purge") == "1" {
-                guard let file = issue.path else { return .error("issue has no file") }
-                try? FileManager.default.removeItem(atPath: file)
-                return .json(API.Message(message: "deleted \(issue.title)"))
+            // Delete removes. It used to move the file to `.issues/cancelled`,
+            // which meant the row stayed in the drawer and the thing you had
+            // just deleted went on being listed — reported as a bug, and it is
+            // one: an action's name is a promise about what it does.
+            //
+            // `cancelled` survives as a status for a *run* somebody stopped.
+            // `?keep=1` is the old behaviour for anyone who wants the trail.
+            if request.q("keep") == "1" {
+                guard let moved = issues.setStatus(project: project, issue: issue,
+                                                   status: .cancelled)
+                else { return .error("could not cancel that issue") }
+                return .json(moved)
             }
-            guard let moved = issues.setStatus(project: project, issue: issue, status: .cancelled)
-            else { return .error("could not cancel that issue") }
-            return .json(moved)
+            guard let file = issue.path else { return .error("issue has no file") }
+            guard (try? FileManager.default.removeItem(atPath: file)) != nil else {
+                return .error("could not delete that issue")
+            }
+            // The runs about it go too. They are terminal records of work on a
+            // sentence that no longer exists, and leaving them in the inbox
+            // would put the deleted issue back in front of you by another door.
+            let name = (file as NSString).lastPathComponent
+            for run in runs.all() where run.projectId == project.id
+                && run.issuePath.map({ ($0 as NSString).lastPathComponent }) == name {
+                supervisor.acknowledge(run.id)
+            }
+            return .json(API.Message(message: "deleted \(issue.title)"))
 
         default:
             return .error("no route", status: 404)
@@ -517,6 +538,12 @@ final class Daemon: @unchecked Sendable {
                 let (updated, message) = supervisor.undo(run.id)
                 guard let updated else { return .error(message) }
                 return .json(API.Message(ok: updated.mergeCommit == nil, message: message))
+            case "rebase":
+                // The action a run whose branch no longer merges is offered
+                // instead of the merge. It says so when it cannot: a rebase
+                // that needs a person is not a failure to hide behind a spinner.
+                let (ok, message) = supervisor.rebase(run.id)
+                return .json(API.Message(ok: ok, message: message))
             case "reply":
                 guard let body = request.decode(API.Reply.self), !body.answer.isEmpty else {
                     return .error("expected {\"answer\": \"...\"}")

@@ -164,25 +164,27 @@ its `Vanished` work as the foundation rather than reinventing it. Its tests come
 Three states, not two. **done** · **blocked** (needs a file another session owns)
 · **not started**.
 
-- [~] **1** — `ready`→`review`, `landed`→`merged` done in the engine, the CLI, the
-  inbox, the notifier, the config and the README. **Blocked:** the two `WorkState`
-  cases in `Digest.swift`. One rename, spelled out in the log.
-- [x] **2** — Merge-tested, engine half: `ZeroCore/MergeCheck.swift`, on the run's
-  serialized state and on the daemon, and the inbox no longer offers a merge it has
-  tested and knows will fail. **Blocked:** `conflicts` as a `WorkState` case, and its
-  tint, both in `Digest.swift`.
-- [ ] **3** — Not started. Drawer.
+- [x] **1** — `ready`→`review`, `landed`→`merged` everywhere, `WorkState` included.
+  Both old spellings still decode; anything else is still an error.
+- [x] **2** — Merge-tested end to end. `conflicts` is a `WorkState` case, tinted
+  like the failure it is, and it earns itself off `run.merge`.
+- [x] **3** — A needs-you group at the top of the drawer, off `Inbox.build`. Zero
+  height when empty, and it *removes* its rows from the per-project lists.
 - [x] **4** — `GET /v1/runs/:id/diff` returns structured data; `ouro diff --json`.
-- [x] **5** — `ZeroApp/DiffView.swift`: commits, files with `+n/-n`, tinted hunks,
-  escape closes. **Not wired to a row** — that call site is in the drawer.
-- [ ] **6** — Not started. Capture panel.
-- [ ] **7** — Not started. Drawer rows.
-- [ ] **8** — Not started. Drawer and capture panel.
-- [ ] **9** — Not started. Drawer rows plus `AppModel`.
-- [~] **10** — `r-ms8p7hby-ci78` rebased onto `748ef29` and verified, **not landed**.
-  `main` has since moved to `2542a82` and it no longer fast-forwards. See the log.
-- [~] **11** — `swift build` clean, `swift test` green at **194**. Deliberately
-  **not installed**. See the log.
+- [x] **5** — `ZeroApp/DiffView.swift`, now wired to the `diff` verb as a sheet on
+  the capture panel. Two layout bugs found and fixed by reading it.
+- [x] **6** — ⌘, opens worktree / finish / base on the capture panel. Collapsed
+  every time; the answers are kept on the project.
+- [x] **7** — `WorkState.verbs` is the table, `RowVerb` carries the glyph and the
+  word, and `VerbButton` gives each one a hover background and a real target.
+- [x] **8** — Nothing changes size on hover or selection. The project name's
+  weight and the tally bar's height are both fixed now.
+- [x] **9** — Delete removes the file, acknowledges the runs behind it, and the row
+  goes on the click. `cancelled` is not a state the drawer draws.
+- [~] **10** — `r-ms8p7hby-ci78` **re-applied, not merged**, and closed with
+  `ouro ok`. Its two new files came across verbatim. See the log.
+- [x] **11** — `swift build` clean for all three, `swift test` green at **223**,
+  installed, daemon restarted, app relaunched.
 
 ---
 
@@ -444,3 +446,206 @@ mid-session for someone using it.
 **Not verified without the screen:** `DiffView` has never been rendered. It
 compiles and its data is real, but no pixel of it has been looked at, and it has no
 call site yet by instruction. Treat its layout as unreviewed.
+
+---
+
+## Progress log, third pass — 2026-07-31
+
+The tree was uncontested this time, so everything that was blocked on somebody
+else's uncommitted file got finished. All nine items are done.
+
+### Item 10 — re-applied, not merged, and closed out
+
+`ouro merge r-ms8p7hby-ci78` was never going to run. The branch had already been
+rebased once (`9b13301`, tagged `ouro-prerebase-r-ms8p7hby`) and the base moved
+twice more underneath it; `git merge-tree` still answers with the same three
+conflicted files, and every one of them had been rewritten in between. Replaying
+a third time would have been replaying against a drawer that no longer exists.
+
+So it was **read and re-implemented**, which is what the brief asked for:
+
+- `ZeroCore/Vanished.swift` and `ZeroCore/RowVerbs.swift` came across **verbatim**,
+  with `VanishedTests` and `RowVerbTests`, by `git checkout <branch> -- <paths>`.
+  Nothing in either file conflicts with anything.
+- The four view files were re-derived against current `main`: `perform`/`handOff`,
+  the `Flash` receipt, `leaving`/`vanished`, `VanishingRow`, the `dismissCapture`
+  hook and — the actual fix — the `lastVerbAt` guard in `menuClosed`, which is
+  what stops a right-click "Delete" taking the whole panel with it.
+
+`RowVerb` grew four cases doing item 7 (`watch`, `reply`, `rebase`, `diff`), so
+`RowVerbTests`' exact counts moved with them: **27 cases, 9 that hand off, 18 that
+keep the panel**. That test asserts the count on purpose, so adding a verb forces
+somebody to decide which side it is on. No test was deleted.
+
+The run was closed with **`ouro ok r-ms8p7hby-ci78`**, not `ouro merge`. `merge`
+would have been a lie in the product's own records: nothing from that branch was
+merged, and `mergedInto` must never name a merge that did not happen. The branch
+and the tag are both still there.
+
+### The words, finished (items 1 and 2)
+
+`WorkState` is now `filed · queued · running · needs you · review · conflicts ·
+merged · failed · stopped`. `WorkState.canonical` reads `ready` and `landed` off
+disk and translates them, exactly as `InboxItem.Kind.canonical` already did — runs
+written before the rename are on this machine right now. A word from neither
+vocabulary is still a decoding error.
+
+`conflicts` is not a label the UI invents. `WorkState.of(run)` reads `run.merge`,
+and only calls it `conflicts` when the verdict is a real one: `error != nil` means
+"we could not tell", and that renders as `review`, never as a failure. Four tests
+pin that, including the one nobody would think to write — an unaskable question
+must not become a confident no.
+
+`Tally` renamed with it and gained `conflicts`. Its decoder still defaults every
+field, so an older daemon renders a project with zeroes rather than failing the
+whole snapshot.
+
+### Item 7 — the verbs
+
+`WorkState.verbs` is the table from §6, in `ZeroCore` where it can be tested
+rather than in a view. `RowVerb` carries the SF Symbol and the one-word label.
+`VerbButton` draws them: glyph, word, a background that appears under the pointer,
+and 5×3 points of padding so the target is a target — a miss on this panel drags
+the window rather than doing nothing.
+
+The row and the context menu read the **same** table, through the same
+`RowActions.run`, so they cannot drift. That is what makes `conflicts` worth
+having: it is the one state where the obvious verb is known to fail, and there is
+now exactly one place that decides not to offer it.
+
+Two verbs needed something behind them that did not exist:
+
+- **`rebase`** — `POST /v1/runs/:id/rebase` and `ouro rebase <run>`. It runs in the
+  run's own worktree where the branch is already checked out, so it cannot disturb
+  what you have open; falls back to the repo only when the worktree is gone and
+  the repo has nothing uncommitted to lose. It aborts and says so rather than
+  leaving a half-applied rebase, and it clears the cached `MergeVerdict`, because
+  the verdict named two commits and one of them just moved.
+- **`watch`** — a terminal running `ouro log <run> -f`. The product's own verb,
+  the same way `Agent view` already opens `claude agents`.
+
+`reply` needed nothing new: it writes `/reply <run> ` into the field you are
+already looking at, and ⏎ sends it down the slash-command path the CLI uses.
+
+### Item 3 — the group
+
+Above the projects and above the fold, so folding the drawer shut does not hide
+what is waiting. It reads `AppModel.waitingOnYou`, which filters the **inbox** —
+`Inbox.build`, the same function `ouro inbox` prints — and then finds each item's
+row in the digests so the group is made of objects you can act on rather than of
+decisions you can only read.
+
+**It removes its rows from the per-project lists.** That was not in the spec and it
+turned out to matter: the first render put the same sentence on screen twice, two
+inches apart, and a group that duplicates what is under it is not a summary, it is
+something you learn to skip. A project whose whole list has been lifted now says
+nothing rather than "nothing open", which would have been the panel contradicting
+itself.
+
+**One disagreement with the spec, stated plainly.** §3 says two things that are not
+the same: "every `review`, `conflicts` and `needs you` item", and "the same set
+`ouro inbox` prints". The inbox also prints `failed` and `merged`. I took the first
+reading. `merged` is a receipt, not a decision — but the real argument is `failed`:
+failed runs accumulate and are rarely cleared, so including them would mean the
+group is never empty, and §3's own "it is empty most of the time" would stop being
+true. Failed work is still on its project row, in red, with `diff · retry · done`.
+If you want it in the group it is one case in `WorkState.needsYou`.
+
+### Item 9 — delete removes
+
+`DELETE /v1/issues/:id` **deletes the file**. It used to move it to
+`.issues/cancelled`, which is why the reported bug happened: the action's name was
+a promise the code did not keep. `?keep=1` (`ouro rm --keep`) is the old behaviour
+for anyone who wants the trail, and `ouro rm` is the CLI verb the GUI button
+mirrors.
+
+Two more things had to be true for the row to actually go:
+
+- **The runs behind it are acknowledged.** Otherwise the deleted sentence came
+  straight back through the inbox.
+- **The digest drops a run whose issue file no longer exists**, and never builds
+  one out of a `cancelled` issue. A run about a sentence nobody kept is not a row.
+  This is what cleared `ouroboros-2d9abf1ca8`, the live example in §8 — it was
+  sitting in `cancelled` with a run attached, which is exactly why the old
+  `status == .new` filter never caught it. Verified against the running daemon:
+  the project's snapshot no longer mentions it.
+
+The click-to-vanish half is the branch's `Vanished` machinery, unchanged.
+
+### Item 8 — nothing moves
+
+Two real ones, both on the project row, both metric changes on selection rather
+than hover:
+
+- the name went `.medium` → `.semibold`, which changes how wide it is and shunts
+  the star, the chip, the bar and the age along the line every time you pick a row;
+- `TallyBar` grew from 3.5 to 4 points high.
+
+Both fixed. The vertical padding that opens a selected row is left alone: that is
+the row deliberately making room for its work, on a click, and it moves nothing on
+the headline's own line. Every `.font` in the drawer and the panel was read; the
+only other hover-driven values are colours and opacities, which is the rule.
+
+### Item 6 — dispatch options
+
+⌘, — the one key on this platform that already means "the settings for the thing
+in front of you". A chevron in the footer for the mouse. Collapsed on every open,
+and `hide()` closes it, so the ⏎ and ⌘⏎ paths are the same two keystrokes they
+have always been.
+
+It writes to the **project**, not to the capture, via `PATCH /v1/projects/:id`,
+which is the whole design: how a repo wants its fixes handled is a property of the
+repo, not of the sentence you happen to be typing. Answer once and every later
+capture into it inherits the answer — which is also why "remembered per project"
+needed no new storage.
+
+`base` is a menu rather than a field, off a new `GET /v1/projects/:id/branches`
+(sorted by last commit, `fix/…` filtered out — those are the machine's output,
+never a base). Fetched once when the row opens, not per poll. A base you have to
+spell is a base you can get wrong, and a text field on the capture panel would
+have been a second thing competing for the keyboard.
+
+### The diff surface
+
+`DiffView` is presented as a **sheet on the capture panel**, not as its own window,
+which is the only way §4's "escape closes it and returns to the drawer with the
+same project still open" can be literally true.
+
+Its layout was unreviewed, and reading it carefully turned up two things worth
+fixing before anyone saw it:
+
+- **Every hunk had its own horizontal scroll view.** Scrolling one long line left
+  the others where they were, so two hunks in one file could sit at two different
+  horizontal offsets — two different claims about where the edit is. Now one
+  scroll view on both axes for the whole file.
+- **Line tints stopped where the text did.** A block of added lines read as a
+  ragged edge rather than as a block. The pane's width is measured and handed down,
+  so a short line still gets a full-width wash and a hunk header reads as a band.
+
+It was also sized for a window rather than for a sheet on a 560-point panel; it is
+660–1100 wide now instead of a flat 720–900, and the file list is 236 rather than
+270.
+
+### Verification
+
+`swift build` clean for `ouroboros-zero`, `ouro` and `ourod`. `swift test` green:
+**223**, up from 194 — the branch's 12 plus 17 new, covering the verdict-to-state
+mapping, the old spellings, the verb table, and delete actually removing.
+
+`make install`, daemon restarted, app relaunched with `open -g`. One `ourod`, one
+app, no strays.
+
+**Looked at, once, on screen** — the panel window only, by window id, in one short
+capture: the needs-you group at the top, `conflicts` in red with its `!` mark, the
+`1 conflict` chip on the project row, `merged` in green, the options chevron in
+the footer, and project names at one weight. The duplicate-row bug above is what
+that capture found.
+
+**Not verified without the screen:** `DiffView` itself. Reaching its `diff` verb
+means hovering a row and clicking a small button, and the operator was typing into the
+panel at that moment — a live draft was in the field in the screenshot. Driving
+his session to look at a layout was the wrong trade. The two structural bugs above
+were found by reading, the data behind it is real and parsed by tested code, and
+the sheet's presentation and dismissal are three lines. Its **appearance** remains
+unlooked-at. The row verbs' click behaviour is likewise proven only at the API
+level and by `RowVerbTests`; no button has been clicked in anger.

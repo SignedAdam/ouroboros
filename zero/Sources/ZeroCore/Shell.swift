@@ -182,6 +182,34 @@ public struct Git {
         !run(["remote"], timeout: 10).trimmed.isEmpty
     }
 
+    /// Local branches, most recently committed to first — the order anyone
+    /// picking one wants them in. Ouroboros's own `fix/…` branches are left
+    /// out: they are the output of the machine, never a base to dispatch onto.
+    public var localBranches: [String] {
+        let r = run(["for-each-ref", "--sort=-committerdate",
+                     "--format=%(refname:short)", "refs/heads/"], timeout: 20)
+        guard r.ok else { return [] }
+        return r.output.split(separator: "\n")
+            .map(String.init)
+            .filter { !$0.isEmpty && !$0.hasPrefix("fix/") }
+    }
+
+    /// Put `branch` back on top of `base`, in a worktree that already has it
+    /// checked out. Non-interactive, and it cleans up after itself: a rebase
+    /// left half-applied is worse than one that never started.
+    public func rebase(branch: String, onto base: String) -> (ok: Bool, message: String) {
+        let checkout = run(["checkout", branch], timeout: 60)
+        guard checkout.ok else {
+            return (false, "could not check out \(branch)")
+        }
+        let result = run(["rebase", base], timeout: 300)
+        guard result.ok else {
+            run(["rebase", "--abort"], timeout: 60)
+            return (false, "\(branch) does not rebase onto \(base) cleanly — it needs a person")
+        }
+        return (true, "rebased \(branch) onto \(base)")
+    }
+
     /// Walk up from `path` to the enclosing work tree root.
     public static func repoRoot(containing path: String) -> String? {
         let r = Shell.run(["git", "rev-parse", "--show-toplevel"], cwd: path, timeout: 10)
