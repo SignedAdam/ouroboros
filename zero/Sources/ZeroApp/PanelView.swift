@@ -276,7 +276,10 @@ struct PanelView: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
-            Text("⌥⌘I to capture anywhere")
+            // The key the app is really listening on, not a hard-coded one: the
+            // configured combo is only a preference and any of them can be
+            // taken, so a literal here goes stale the first time a fallback wins.
+            Text(HotkeyCombo.captureHint(active: HotkeyManager.current))
                 .font(.system(size: 10)).foregroundStyle(.secondary)
             Spacer()
             Button("Quit") { NSApplication.shared.terminate(nil) }

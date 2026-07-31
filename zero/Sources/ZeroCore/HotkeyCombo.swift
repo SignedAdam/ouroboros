@@ -61,6 +61,18 @@ public enum HotkeyCombo {
         return glyphs + glyph(for: Int(parsed.keyCode))
     }
 
+    /// The one line the menu-bar panel prints about the global capture key.
+    /// `active` is the combo that really registered — never the configured one,
+    /// which may have been taken — so the panel cannot advertise a key that does
+    /// nothing. When the whole chain was taken there is no key to name, and
+    /// saying so beats naming one.
+    public static func captureHint(active: String?) -> String {
+        guard let active, !active.trimmingCharacters(in: .whitespaces).isEmpty else {
+            return "no capture hotkey — use this menu"
+        }
+        return "\(describe(active)) to capture anywhere"
+    }
+
     /// The canonical spelling of a registered combo, so the app can report the
     /// key it actually got rather than the one that was asked for.
     public static func name(keyCode: UInt32, modifiers: UInt32) -> String? {
