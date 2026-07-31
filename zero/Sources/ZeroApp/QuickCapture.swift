@@ -449,7 +449,32 @@ struct QuickCaptureView: View {
                 .fixedSize()
                 .help("which coding agent this capture will dispatch to")
 
-                if let flash {
+                // A command in flight owns this slot. `/update` pulls, builds
+                // and reinstalls — minutes of nothing, which reads exactly like
+                // a panel that ignored you. A spinner and a number that moves
+                // are the difference between "working" and "hung".
+                if slash.working {
+                    HStack(spacing: 6) {
+                        ProgressView()
+                            .controlSize(.small)
+                            .scaleEffect(0.6)
+                            .frame(width: 10, height: 10)
+                        Text(slash.status ?? "working…")
+                            .font(.system(size: 11))
+                            .foregroundStyle(ouroOrange)
+                            .lineLimit(1)
+                        if let startedAt = slash.startedAt {
+                            // Redraws itself once a second; nothing else in the
+                            // panel has a reason to re-render while we wait.
+                            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                                Text(QuickCaptureView.elapsed(since: startedAt))
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                    }
+                    .help("this runs in the daemon — closing the panel will not stop it")
+                } else if let flash {
                     Text(flash)
                         .font(.system(size: 11))
                         .foregroundStyle(flashIsError
@@ -494,6 +519,12 @@ struct QuickCaptureView: View {
         .overlay(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .strokeBorder(ouroOrange.opacity(0.25), lineWidth: 1))
+    }
+
+    static func elapsed(since start: Date) -> String {
+        let seconds = max(0, Int(Date().timeIntervalSince(start)))
+        if seconds < 60 { return "\(seconds)s" }
+        return "\(seconds / 60)m\(String(format: "%02d", seconds % 60))s"
     }
 
     private func submit(fix: Bool) {

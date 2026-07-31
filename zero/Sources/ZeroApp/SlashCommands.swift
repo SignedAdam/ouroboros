@@ -28,6 +28,13 @@ final class SlashRunner: ObservableObject {
     /// Set when a command needs more than a line of text; the panel presents it
     /// as a sheet and clears it when the sheet closes.
     @Published var wizard: WizardRequest?
+    /// True while a command is in flight. `/update` pulls, builds and reinstalls
+    /// — minutes, during which the panel used to sit there saying nothing, which
+    /// is indistinguishable from having done nothing.
+    @Published var working = false
+    /// When the in-flight command started, so the panel can show it ticking.
+    /// A number that moves is the difference between "busy" and "hung".
+    @Published var startedAt: Date?
 
     private let model: AppModel
 
@@ -42,6 +49,9 @@ final class SlashRunner: ObservableObject {
     /// filed as an ordinary issue — "/tmp is full" is a bug report, not a typo.
     func run(_ input: String) async -> Bool {
         guard let parsed = SlashCommands.parse(input) else { return false }
+        working = true
+        startedAt = Date()
+        defer { working = false; startedAt = nil }
         await execute(parsed.command, args: parsed.args)
         return true
     }
@@ -419,8 +429,39 @@ final class SlashRunner: ObservableObject {
         report("pulling and rebuilding — this takes a minute…")
         let reply = await Wire.post("/v1/update", as: API.UpdateResponse.self)
         guard let response = reply.value else { report(reply.text); return }
-        report(response.restarting ? "\(response.message) — the daemon is coming back" : response.message)
-        model.refresh()
+        guard response.restarting else {
+            // Nothing to install: already current, or the pull/build failed.
+            // Either way the running app is still the right one.
+            report(response.message)
+            model.refresh()
+            return
+        }
+        // The daemon rebuilt the app bundle, then exited into its own new
+        // binary — but nothing was restarting the APP, so it went on running
+        // the old build. That is how a fix that has already landed keeps
+        // being reported as broken for the rest of the day.
+        report("\(response.message) — restarting the app…")
+        try? await Task.sleep(nanoseconds: 700_000_000)
+        SlashRunner.relaunchApp()
+    }
+
+    /// Relaunch the freshly built bundle and stand down.
+    ///
+    /// A detached login shell, never a `Process` child: this app is about to
+    /// terminate, and anything parented to it would die alongside it before it
+    /// ever reached `open`.
+    static func relaunchApp() {
+        guard let repo = Config.load().repoPath ?? Registry().find("ouroboros")?.path else {
+            NSApplication.shared.terminate(nil)
+            return
+        }
+        let app = ((repo as NSString).appendingPathComponent("zero") as NSString)
+            .appendingPathComponent("build/Ouroboros Zero.app")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-lc", "sleep 1; open -g \(Shell.quote(app))"]
+        try? process.run()
+        NSApplication.shared.terminate(nil)
     }
 
     /// Rebuild from the working tree and relaunch into it.
