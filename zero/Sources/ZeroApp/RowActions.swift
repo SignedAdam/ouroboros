@@ -372,8 +372,8 @@ struct IssueRow: View {
 
             Text(pip.title)
                 .font(.system(size: 11))
-                .foregroundStyle(hovering && !leaving
-                                 ? Color.primary : Color.primary.opacity(0.72))
+                .foregroundStyle(titleTint)
+                .strikethrough(pip.state == .merged, color: Color.primary.opacity(0.35))
                 .lineLimit(1)
                 .truncationMode(.tail)
 
@@ -409,6 +409,16 @@ struct IssueRow: View {
         }
         .contextMenu { RowActions.issueMenu(pip, model: model) }
         .vanishing(leaving)
+    }
+
+    /// Merged work reads as done: struck through, and grey rather than the
+    /// weight every other row's title wears. It still lifts under the pointer,
+    /// because "finished" is not "unreadable" — undo is on its menu, and you
+    /// have to be able to read the line you are about to undo.
+    private var titleTint: Color {
+        let lit = hovering && !leaving
+        if pip.state == .merged { return Color.primary.opacity(lit ? 0.55 : 0.38) }
+        return lit ? Color.primary : Color.primary.opacity(0.72)
     }
 
     /// The verbs for this row's state, two or three of them, and nothing that

@@ -107,8 +107,16 @@ struct PanelView: View {
                     HStack(alignment: .top, spacing: 8) {
                         Circle().fill(item.tint).frame(width: 6, height: 6).padding(.top, 5)
                         VStack(alignment: .leading, spacing: 2) {
+                            // A merged item is a receipt, not a decision: it is
+                            // in the inbox so you can read it or undo it. Same
+                            // mark the drawer gives it — crossed off, greyed —
+                            // so "done" looks the same wherever you meet it.
                             Text(item.title)
                                 .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(item.kind == .merged
+                                                 ? Color.primary.opacity(0.45) : Color.primary)
+                                .strikethrough(item.kind == .merged,
+                                               color: Color.primary.opacity(0.35))
                                 .lineLimit(2)
                             Text("\(item.label) · \(item.projectName)")
                                 .font(.system(size: 10)).foregroundStyle(item.tint)

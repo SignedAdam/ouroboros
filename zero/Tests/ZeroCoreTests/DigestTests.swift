@@ -372,6 +372,15 @@ final class WorkStateWordsTests: XCTestCase {
         XCTAssertEqual(WorkState.of(succeeded(mergedInto: "main")), .merged)
     }
 
+    /// An open PR is merged too, as far as this panel is concerned: it is out of
+    /// your hands, and the row draws it the same — crossed off, greyed, with
+    /// `undo` still on its menu.
+    func testAnOpenPRCountsAsMerged() {
+        var run = succeeded()
+        run.result = AgentResult(outcome: "done", prUrl: "https://example.com/pr/1")
+        XCTAssertEqual(WorkState.of(run), .merged)
+    }
+
     /// Runs written before the rename are on disk right now. Reading them has
     /// to keep working, and it is exactly the compatibility that breaks quietly.
     func testTheOldSpellingsStillDecode() throws {
