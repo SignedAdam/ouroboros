@@ -130,6 +130,33 @@ final class HotkeyDescribeTests: XCTestCase {
     }
 }
 
+final class HotkeyCaptureHintTests: XCTestCase {
+
+    func testTheHintNamesTheComboThatRegistered() {
+        XCTAssertEqual(HotkeyCombo.captureHint(active: "opt+space"),
+                       "⌥Space to capture anywhere")
+        XCTAssertEqual(HotkeyCombo.captureHint(active: "cmd+shift+space"),
+                       "⇧⌘Space to capture anywhere")
+    }
+
+    func testNoRegisteredComboIsSaidRatherThanGuessed() {
+        // Every combo in the chain was taken: there is no key to advertise, and
+        // the panel is itself the way in.
+        XCTAssertEqual(HotkeyCombo.captureHint(active: nil), "no capture hotkey — use this menu")
+        XCTAssertEqual(HotkeyCombo.captureHint(active: "  "), "no capture hotkey — use this menu")
+    }
+
+    func testTheHintNeverHardCodesOneCombo() {
+        // The bug this replaced: a literal in the panel footer that kept saying
+        // ⌥⌘I long after the default became ⌥Space.
+        for combo in HotkeyCombo.fallbacks {
+            XCTAssertTrue(HotkeyCombo.captureHint(active: combo)
+                            .hasPrefix(HotkeyCombo.describe(combo)),
+                          "\(combo) is not the key the hint names")
+        }
+    }
+}
+
 final class HotkeyNameTests: XCTestCase {
 
     func testCodeAndMaskRoundTripToText() {
