@@ -484,27 +484,31 @@ struct QuickCaptureView: View {
 
                 Spacer()
 
-                // Three hints, generous spacing, no wrapping.
+                // Only what you can actually do this second.
                 //
-                // This row used to carry six: file, file & fix, ⇥ project,
-                // / commands, esc, and the global hotkey — unseparated, so it
-                // read as one run-on string, and "file & fix" wrapped onto a
-                // second line because six labels do not fit 560 points.
-                //
-                // Cut: `esc` (every panel on this machine closes with escape),
-                // the hotkey (you just pressed it to get here), and `⇥ project`
-                // (a shortcut worth having, not worth a permanent slot).
-                HStack(spacing: 16) {
-                    if matches.isEmpty {
-                        hint("⏎", "file")
-                        hint("⌘⏎", "fix", accent: true)
-                        hint("/", "commands")
-                    } else {
+                // Three permanent hints read as one run-on string, and the
+                // worst of them was `/ commands`: a slash set in body text is
+                // punctuation, not a key, so it looked like the tail of a
+                // sentence rather than something to press. Two changes fix it
+                // without a word of explanation. Every key is drawn as a key —
+                // a cap you press, which makes `/` unmistakably a keystroke.
+                // And the row is now conditional: an empty field cannot be
+                // filed (`submit` refuses it), so filing is not offered, and
+                // the one hint nobody would ever discover is alone on the line.
+                // Type a character and it swaps for the two that are now true.
+                HStack(spacing: 14) {
+                    if !matches.isEmpty {
                         hint("⏎", "run", accent: true)
                         hint("⇥", "complete")
                         hint("↑↓", "pick")
+                    } else if draftIsEmpty {
+                        hint("/", "commands")
+                    } else {
+                        hint("⏎", "file")
+                        hint("⌘⏎", "fix", accent: true)
                     }
                 }
+                .animation(.easeOut(duration: 0.12), value: draftIsEmpty)
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 10)
@@ -521,16 +525,33 @@ struct QuickCaptureView: View {
                 .strokeBorder(ouroOrange.opacity(0.25), lineWidth: 1))
     }
 
-    /// A key and what it does, as two weights of the same line. The key is the
-    /// thing you scan for, so it is the one that gets the ink.
+    private var draftIsEmpty: Bool {
+        model.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// A key, drawn as a key, and what it does.
+    ///
+    /// The cap is the entire point: `⏎` and `⌘⏎` read as keys whatever you set
+    /// them in, because no sentence contains them — but `/` does, and set flat
+    /// it was read as punctuation by the person it was written for. Give it an
+    /// outline and a fill and it stops being a slash and becomes a keystroke,
+    /// which is the whole instruction, without a word of instruction.
     private func hint(_ key: String, _ verb: String, accent: Bool = false) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             Text(key)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(accent ? ouroOrange : Color.secondary)
+                .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                .foregroundStyle(accent ? ouroOrange : Color.primary.opacity(0.65))
+                .frame(minWidth: 9)
+                .padding(.horizontal, 4)
+                .padding(.vertical, 2)
+                .background(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(accent ? ouroOrange.opacity(0.13) : Color.primary.opacity(0.07)))
+                .overlay(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .strokeBorder(accent ? ouroOrange.opacity(0.32) : Color.primary.opacity(0.14),
+                                  lineWidth: 0.5))
             Text(verb)
                 .font(.system(size: 10))
-                .foregroundStyle(accent ? ouroOrange.opacity(0.75) : Color.secondary.opacity(0.75))
+                .foregroundStyle(accent ? ouroOrange.opacity(0.8) : Color.secondary)
         }
         .fixedSize()
     }

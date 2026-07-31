@@ -196,6 +196,73 @@ final class DigestTests: XCTestCase {
         _ = store.write(title: "second", body: "two")
         XCTAssertEqual(digests.digest(project, runs: []).openCount, 2)
     }
+
+    /// The row draws its counts from the tally, and the tally is counted before
+    /// the six-row cap. Count the rows instead and every busy project — the
+    /// only ones whose numbers anyone needs — quietly reports six.
+    func testTheTallyCountsPastTheSixRowsTheDrawerDraws() throws {
+        let repo = scratch("tally-cap")
+        let store = IssueStore(rootDir: repo)
+        for i in 0..<9 { _ = store.write(title: "filed \(i)", body: "…") }
+
+        let digest = Digests().digest(Project(id: "t", name: "t", path: repo, lastUsed: Date()),
+                                      runs: [])
+        XCTAssertEqual(digest.issues.count, 6)
+        XCTAssertEqual(digest.tally.filed, 9)
+        XCTAssertEqual(digest.tally.open, 9)
+    }
+
+    /// Every state in one project, because the bar draws a segment per state
+    /// and the chip picks one to shout about.
+    func testTheTallySeparatesReviewFromLanded() throws {
+        let repo = scratch("tally-states")
+        let store = IssueStore(rootDir: repo)
+        let project = Project(id: "s", name: "s", path: repo, lastUsed: Date())
+
+        var runs: [Run] = []
+        func dispatched(_ id: String, _ title: String, _ status: RunStatus,
+                        merged: String? = nil) throws {
+            let issue = try XCTUnwrap(store.write(title: title, body: "…"))
+            runs.append(Run(id: id, projectId: "s", projectName: "s", kind: .fix,
+                            agent: "claude", title: title, issuePath: issue.path, cwd: repo,
+                            base: "main", finish: .merge, status: status, mergedInto: merged))
+        }
+        try dispatched("r-a", "in flight", .running)
+        try dispatched("r-b", "asked me something", .awaiting)
+        try dispatched("r-c", "verified, not merged", .succeeded)
+        try dispatched("r-d", "merged", .succeeded, merged: "main")
+        try dispatched("r-e", "blew up", .failed)
+        _ = store.write(title: "nobody has looked at this", body: "…")
+
+        let tally = Digests().digest(project, runs: runs).tally
+        XCTAssertEqual(tally.running, 1)
+        XCTAssertEqual(tally.asking, 1)
+        // The distinction the whole chip rests on: `succeeded` is two different
+        // situations, and only one of them wants you.
+        XCTAssertEqual(tally.ready, 1)
+        XCTAssertEqual(tally.landed, 1)
+        XCTAssertEqual(tally.failed, 1)
+        XCTAssertEqual(tally.filed, 1)
+        // Landed work is done with, so it is not part of the backlog the bar
+        // draws — but it is part of the total the tooltip reports.
+        XCTAssertEqual(tally.open, 5)
+        XCTAssertEqual(tally.total, 6)
+        XCTAssertEqual(tally.yours, 3)
+        XCTAssertEqual(tally.openStates.map(\.state),
+                       [.asking, .failed, .ready, .running, .filed])
+    }
+
+    /// A daemon older than the tally sends none, and the panel has to render
+    /// the project anyway — the burn this codebase keeps re-learning.
+    func testADigestWithoutATallyStillDecodes() throws {
+        let json = """
+        {"id":"p","name":"p","path":"/tmp/p","handled":true,"issues":[],"openCount":2}
+        """
+        let digest = try JSONDecoder().decode(ProjectDigest.self, from: Data(json.utf8))
+        XCTAssertEqual(digest.openCount, 2)
+        XCTAssertEqual(digest.tally.total, 0)
+        XCTAssertTrue(digest.tally.openStates.isEmpty)
+    }
 }
 
 // MARK: - ages

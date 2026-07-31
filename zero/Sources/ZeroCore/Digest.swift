@@ -114,6 +114,84 @@ public struct IssuePip: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
+/// How much work a project is carrying, by state.
+///
+/// Counted over every piece of work in the project, not over the rows the
+/// drawer draws: `ProjectDigest.issues` is capped at six for display, so
+/// counting rows would under-report exactly the projects most worth reporting.
+public struct Tally: Codable, Sendable, Equatable {
+    public var filed = 0
+    public var queued = 0
+    public var running = 0
+    public var asking = 0
+    public var ready = 0
+    public var landed = 0
+    public var failed = 0
+    public var stopped = 0
+
+    public init() {}
+
+    /// Every field defaulted and decoded leniently: a daemon older than this
+    /// type sends no tally at all, and a project rendering with zeroes beats a
+    /// snapshot that fails to decode.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        filed = try c.decodeIfPresent(Int.self, forKey: .filed) ?? 0
+        queued = try c.decodeIfPresent(Int.self, forKey: .queued) ?? 0
+        running = try c.decodeIfPresent(Int.self, forKey: .running) ?? 0
+        asking = try c.decodeIfPresent(Int.self, forKey: .asking) ?? 0
+        ready = try c.decodeIfPresent(Int.self, forKey: .ready) ?? 0
+        landed = try c.decodeIfPresent(Int.self, forKey: .landed) ?? 0
+        failed = try c.decodeIfPresent(Int.self, forKey: .failed) ?? 0
+        stopped = try c.decodeIfPresent(Int.self, forKey: .stopped) ?? 0
+    }
+
+    public mutating func add(_ state: WorkState) {
+        switch state {
+        case .filed:   filed += 1
+        case .queued:  queued += 1
+        case .running: running += 1
+        case .asking:  asking += 1
+        case .ready:   ready += 1
+        case .landed:  landed += 1
+        case .failed:  failed += 1
+        case .stopped: stopped += 1
+        }
+    }
+
+    public func count(of state: WorkState) -> Int {
+        switch state {
+        case .filed:   return filed
+        case .queued:  return queued
+        case .running: return running
+        case .asking:  return asking
+        case .ready:   return ready
+        case .landed:  return landed
+        case .failed:  return failed
+        case .stopped: return stopped
+        }
+    }
+
+    /// Still wants something from someone. A landed fix and an abandoned run
+    /// are finished with, and a backlog that counts them is a backlog that only
+    /// ever grows.
+    public var open: Int { filed + queued + running + asking + ready + failed }
+
+    public var total: Int { open + landed + stopped }
+
+    /// Waiting on *you* specifically — a question, a review, a failure. The
+    /// three states worth interrupting someone for.
+    public var yours: Int { asking + ready + failed }
+
+    /// Open states with something in them, most urgent first. What a bar draws
+    /// and what a summary reads.
+    public var openStates: [(state: WorkState, count: Int)] {
+        [WorkState.asking, .failed, .ready, .running, .queued, .filed]
+            .map { ($0, count(of: $0)) }
+            .filter { $0.1 > 0 }
+    }
+}
+
 /// Why a project is in the drawer at all. Assigned by the daemon so the app
 /// never has to re-derive it and get a different answer.
 public enum ProjectSection: String, Codable, Sendable, CaseIterable {
@@ -159,6 +237,9 @@ public struct ProjectDigest: Codable, Sendable, Equatable, Identifiable {
     /// The work in this project, most urgent first. Issues and runs in one
     /// list, because to the person who typed the sentence they are one thing.
     public var issues: [IssuePip]
+    /// Every piece of work here, by state — including the ones `issues` had to
+    /// leave out.
+    public var tally: Tally
     /// Filed and never dispatched. The count the drawer puts a noun on.
     public var openCount: Int
     public var running: Int
@@ -172,8 +253,8 @@ public struct ProjectDigest: Codable, Sendable, Equatable, Identifiable {
     public init(id: String, name: String, path: String, handled: Bool,
                 section: ProjectSection = .git, favourite: Bool = false,
                 autonomy: Autonomy = .manual, agent: String = "",
-                pulse: Pulse? = nil, issues: [IssuePip] = [], openCount: Int = 0,
-                running: Int = 0, fixed: Int = 0, failed: Int = 0) {
+                pulse: Pulse? = nil, issues: [IssuePip] = [], tally: Tally = Tally(),
+                openCount: Int = 0, running: Int = 0, fixed: Int = 0, failed: Int = 0) {
         self.id = id
         self.name = name
         self.path = path
@@ -184,6 +265,7 @@ public struct ProjectDigest: Codable, Sendable, Equatable, Identifiable {
         self.agent = agent
         self.pulse = pulse
         self.issues = issues
+        self.tally = tally
         self.openCount = openCount
         self.running = running
         self.fixed = fixed
@@ -204,6 +286,7 @@ public struct ProjectDigest: Codable, Sendable, Equatable, Identifiable {
         agent = try c.decodeIfPresent(String.self, forKey: .agent) ?? ""
         pulse = try c.decodeIfPresent(Pulse.self, forKey: .pulse)
         issues = try c.decodeIfPresent([IssuePip].self, forKey: .issues) ?? []
+        tally = try c.decodeIfPresent(Tally.self, forKey: .tally) ?? Tally()
         openCount = try c.decodeIfPresent(Int.self, forKey: .openCount) ?? 0
         running = try c.decodeIfPresent(Int.self, forKey: .running) ?? 0
         fixed = try c.decodeIfPresent(Int.self, forKey: .fixed) ?? 0
@@ -373,6 +456,12 @@ public final class Digests: @unchecked Sendable {
             a.state.rank != b.state.rank ? a.state.rank < b.state.rank : a.at > b.at
         }
 
+        // Counted here, over everything, because six lines down `pips` becomes
+        // the first six rows and the tally would start lying about any project
+        // with a seventh.
+        var tally = Tally()
+        for pip in pips { tally.add(pip.state) }
+
         let handled = project.lastUsed != nil || !mine.isEmpty || facts.lastIssue != nil
         // What the panel shows as "the last thing that happened here": for a
         // project Ouroboros knows, that is the issue you filed; for one it only
@@ -392,6 +481,7 @@ public final class Digests: @unchecked Sendable {
             // Six is what an open project can show without the drawer becoming
             // the issue tracker. `ouro issues` is the issue tracker.
             issues: Array(pips.prefix(6)),
+            tally: tally,
             openCount: waiting.count,
             running: mine.filter { $0.status.isActive && $0.status != .queued }.count,
             fixed: mine.filter { $0.status == .succeeded }.count,

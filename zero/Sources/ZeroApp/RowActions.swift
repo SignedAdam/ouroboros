@@ -100,6 +100,82 @@ enum RowActions {
     }
 }
 
+/// What state a piece of work is in, as a mark rather than a bullet.
+///
+/// This list used to open every row with the same small circle — an unordered
+/// list, carrying a colour and nothing else, in a panel where every other mark
+/// means something. These are seven marks for seven situations, so the shape
+/// says what happened before the word on the right does, and the two states
+/// that are genuinely alive are the two that move.
+struct WorkGlyph: View {
+    let state: WorkState
+
+    var body: some View {
+        Group {
+            switch state {
+            case .filed:   ring(Color.primary.opacity(0.32))
+            case .queued:  ring(state.tint.opacity(0.75))
+            case .running: spinner
+            case .asking:  halo
+            case .ready:   target
+            case .landed:  symbol("checkmark", weight: .bold, fade: 0.7)
+            case .failed:  symbol("xmark", weight: .heavy, fade: 1)
+            case .stopped: symbol("minus", weight: .bold, fade: 0.8)
+            }
+        }
+        // One box for every state, so seven different marks leave the titles
+        // beside them on a single line.
+        .frame(width: 9, height: 9)
+    }
+
+    /// Nobody has been dispatched. An outline is an empty seat.
+    private func ring(_ tint: Color) -> some View {
+        Circle().strokeBorder(tint, lineWidth: 1).frame(width: 6.5, height: 6.5)
+    }
+
+    /// A gap in a circle, turning. Nothing else in the panel says "right now"
+    /// as immediately as something that moves.
+    private var spinner: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { context in
+            Circle()
+                .trim(from: 0, to: 0.7)
+                .stroke(state.tint, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                .frame(width: 7.5, height: 7.5)
+                .rotationEffect(.degrees(context.date.timeIntervalSinceReferenceDate * 200))
+        }
+    }
+
+    /// The agent stopped and asked something: the one state where nothing at
+    /// all happens until you answer, so it is the one that pushes outward.
+    private var halo: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 12.0)) { context in
+            let phase = 0.5 + 0.5 * sin(context.date.timeIntervalSinceReferenceDate * 2.6)
+            ZStack {
+                Circle()
+                    .strokeBorder(state.tint.opacity(0.6 * (1 - phase)), lineWidth: 1)
+                    .frame(width: 5 + 4 * phase, height: 5 + 4 * phase)
+                Circle().fill(state.tint).frame(width: 4.5, height: 4.5)
+            }
+        }
+    }
+
+    /// Verified, on its branch, waiting for permission to land. Drawn as
+    /// something to aim at, because the next move is yours.
+    private var target: some View {
+        ZStack {
+            Circle().strokeBorder(state.tint.opacity(0.5), lineWidth: 1)
+                .frame(width: 8.5, height: 8.5)
+            Circle().fill(state.tint).frame(width: 3.5, height: 3.5)
+        }
+    }
+
+    private func symbol(_ name: String, weight: Font.Weight, fade: Double) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 6.5, weight: weight))
+            .foregroundStyle(state.tint.opacity(fade))
+    }
+}
+
 /// One piece of work, as a row you can act on.
 ///
 /// Reads without hovering: a dot says how it is going, the title says what it
@@ -112,11 +188,7 @@ struct IssueRow: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            // Hollow means nobody has been dispatched. That single distinction
-            // is the difference between work in flight and work rotting.
-            Circle()
-                .strokeBorder(pip.state.tint, lineWidth: pip.state.isHollow ? 1 : 2.5)
-                .frame(width: 5, height: 5)
+            WorkGlyph(state: pip.state)
 
             Text(pip.title)
                 .font(.system(size: 11))
@@ -126,8 +198,10 @@ struct IssueRow: View {
 
             if pip.attempts > 1 {
                 Text("×\(pip.attempts)")
-                    .font(.system(size: 8, design: .monospaced))
-                    .foregroundStyle(.quaternary)
+                    .font(.system(size: 8.5, weight: .medium))
+                    .monospacedDigit()
+                    .foregroundStyle(Color.primary.opacity(0.4))
+                    .help("\(pip.attempts) attempts at this issue; the newest is shown")
             }
 
             Spacer(minLength: 8)
@@ -136,13 +210,14 @@ struct IssueRow: View {
 
             Text(pip.state.label)
                 .font(.system(size: 9.5))
-                .foregroundStyle(pip.state.isHollow ? Color.secondary : pip.state.tint)
+                .foregroundStyle(pip.state.isHollow ? Color.primary.opacity(0.45) : pip.state.tint)
                 .fixedSize()
 
             Text(Ago.short(pip.at))
-                .font(.system(size: 9, design: .monospaced))
-                .foregroundStyle(.quaternary)
-                .frame(width: 22, alignment: .trailing)
+                .font(.system(size: 9.5, weight: .medium, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(Color.primary.opacity(hovering ? 0.55 : 0.4))
+                .frame(width: 24, alignment: .trailing)
         }
         .padding(.vertical, 2)
         .contentShape(Rectangle())
