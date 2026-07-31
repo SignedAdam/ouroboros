@@ -28,6 +28,9 @@ public final class Supervisor: @unchecked Sendable {
 
     private let work = DispatchQueue(label: "zero.supervisor")
     private let worktrees = WorktreeManager()
+    /// Answers to "would this still merge", kept against the pair of shas they
+    /// are answers about. See `MergeChecks`.
+    private let mergeChecks = MergeChecks()
 
     public var verifyTimeout: TimeInterval = 900
 
@@ -622,6 +625,40 @@ public final class Supervisor: @unchecked Sendable {
         guard let run = runs.get(id), let project = registry.find(run.projectId),
               let branch = run.branch else { return "" }
         return Git(project.path).run(["diff", "\(run.base)...\(branch)"], timeout: 60).output
+    }
+
+    /// The same work as `diff`, read rather than dumped: commits, files with
+    /// their counts, and hunks with a kind per line. One parser, in the daemon,
+    /// so no client has to grow a second one.
+    public func diffReport(_ id: String) -> DiffReport? {
+        guard let run = runs.get(id), let project = registry.find(run.projectId) else { return nil }
+        guard let branch = run.branch else {
+            // A run with no branch is not an error, it is a run that changed
+            // nothing. An empty report says that; a 404 would say the run is
+            // missing, which is a different and wrong thing to tell someone.
+            return DiffReport(runId: run.id, base: run.base, branch: "")
+        }
+        return DiffReports.build(runId: run.id, repo: project.path,
+                                 base: run.base, branch: branch)
+    }
+
+    /// Would this branch actually go in? Tested without performing it, and
+    /// answered about two named commits. See `MergeVerdict`.
+    public func mergeCheck(_ id: String) -> MergeVerdict? {
+        guard let run = runs.get(id), let project = registry.find(run.projectId),
+              let branch = run.branch else { return nil }
+        return mergeChecks.verdict(repo: project.path, base: run.base, branch: branch)
+    }
+
+    /// The verdict for a run that is waiting on a human, and nothing else.
+    ///
+    /// A queued or running branch has not finished being written, and a merged
+    /// one has already gone in — testing either would cost a fork per row per
+    /// poll to answer a question nobody asked.
+    public func mergeCheckIfPending(_ run: Run) -> MergeVerdict? {
+        guard run.status == .succeeded, run.mergedInto == nil,
+              run.result?.prUrl == nil, run.branch != nil else { return nil }
+        return mergeCheck(run.id)
     }
 
     public func acknowledge(_ id: String) {

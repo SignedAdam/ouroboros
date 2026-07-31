@@ -364,8 +364,8 @@ extension InboxItem {
         switch kind {
         case .question: return Color(red: 1.0, green: 0.74, blue: 0.18)
         case .failed:   return Color(red: 1.0, green: 0.37, blue: 0.34)
-        case .landed:   return Color(red: 0.49, green: 0.85, blue: 0.34)
-        case .ready:    return Color(red: 0.47, green: 0.67, blue: 1.0)
+        case .merged:   return Color(red: 0.49, green: 0.85, blue: 0.34)
+        case .review:   return Color(red: 0.47, green: 0.67, blue: 1.0)
         case .proposal: return Color(red: 1.0, green: 0.48, blue: 0.09)
         }
     }
@@ -374,8 +374,8 @@ extension InboxItem {
         switch kind {
         case .question: return "needs you"
         case .failed:   return "failed"
-        case .landed:   return "landed"
-        case .ready:    return "ready"
+        case .merged:   return "merged"
+        case .review:   return "review"
         case .proposal: return "proposal"
         }
     }

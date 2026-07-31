@@ -36,7 +36,7 @@ public struct Config: Codable, Sendable {
                 defaultAgent: String = "claude",
                 terminal: String = "cinema",
                 discordWebhook: String? = nil,
-                notifyOn: [String] = ["question", "failed", "landed", "ready"],
+                notifyOn: [String] = ["question", "failed", "merged", "review"],
                 notifyMacOS: Bool = true,
                 agents: [String: [String]] = Config.defaultAgents,
                 httpPort: Int? = nil,

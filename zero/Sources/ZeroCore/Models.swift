@@ -206,6 +206,11 @@ public struct Run: Codable, Sendable, Equatable, Identifiable {
     /// reopened instead of re-read. Set at dispatch for harnesses that accept
     /// one, discovered at exit for the ones that don't.
     public var sessionId: String?
+    /// Whether this branch still merges into its base, and which two commits
+    /// that was decided about. Filled in by the daemon for runs waiting on a
+    /// human, so a client can render `review` or `conflicts` without shelling
+    /// out to git per row. See `MergeVerdict`.
+    public var merge: MergeVerdict?
 
     public init(id: String, projectId: String, projectName: String, kind: RunKind,
                 agent: String, title: String, issuePath: String? = nil, cwd: String,
@@ -215,7 +220,7 @@ public struct Run: Codable, Sendable, Equatable, Identifiable {
                 exitCode: Int32? = nil, verify: VerifyOutcome? = nil,
                 result: AgentResult? = nil, note: String? = nil, mergedInto: String? = nil,
                 mergeCommit: String? = nil, acknowledged: Bool = false, prompt: String? = nil,
-                sessionId: String? = nil) {
+                sessionId: String? = nil, merge: MergeVerdict? = nil) {
         self.id = id
         self.projectId = projectId
         self.projectName = projectName
@@ -242,6 +247,7 @@ public struct Run: Codable, Sendable, Equatable, Identifiable {
         self.acknowledged = acknowledged
         self.prompt = prompt
         self.sessionId = sessionId
+        self.merge = merge
     }
 
     public var duration: TimeInterval? {
@@ -310,12 +316,38 @@ public struct Proposal: Codable, Sendable, Equatable, Identifiable {
 /// The Needs-You queue. Five kinds, decisions only — never status. If an item
 /// doesn't need a human, it does not belong here.
 public struct InboxItem: Codable, Sendable, Equatable, Identifiable {
+    /// The five, in the words a person would use.
+    ///
+    /// `ready` and `landed` were the first two names and both failed the
+    /// read-aloud test: `ready` said nothing about who it was waiting on, and
+    /// `landed` was jargon for a thing everyone already calls a merge. What is
+    /// waiting on you is `review`; what went in is `merged`.
     public enum Kind: String, Codable, Sendable {
         case question    // an agent stopped and asked
         case failed      // the run or the verification gate went red
-        case landed      // a fix merged / a PR is open — review or undo
-        case ready       // verified, waiting for permission to merge
+        case merged      // a fix merged / a PR is open — read it or undo it
+        case review      // verified, waiting for you
         case proposal    // an operator suggests work
+
+        /// Runs on disk and `notifyOn` in config.json were written with the old
+        /// words and are not worth breaking someone's inbox over.
+        public static func canonical(_ raw: String) -> String {
+            switch raw {
+            case "landed": return Kind.merged.rawValue
+            case "ready":  return Kind.review.rawValue
+            default:       return raw
+            }
+        }
+
+        public init(from decoder: Decoder) throws {
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            guard let kind = Kind(rawValue: Kind.canonical(raw)) else {
+                throw DecodingError.dataCorruptedError(
+                    in: try decoder.singleValueContainer(),
+                    debugDescription: "unknown inbox kind '\(raw)'")
+            }
+            self = kind
+        }
     }
 
     public var id: String

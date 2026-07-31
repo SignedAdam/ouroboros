@@ -285,10 +285,63 @@ enum Commands {
     static func diff(_ args: Args) {
         guard let runId = args.positional.first else { Out.die("usage: ouro diff <run-id>") }
         let client = Zero0.connected()
-        guard let response = try? client.get("/v1/runs/\(runId)/diff", as: API.TextResponse.self) else {
+
+        // `--json` is the endpoint's own payload, printed. Not re-encoded from
+        // a decoded value: what a script sees and what the diff surface reads
+        // then cannot drift apart.
+        if args.has("json") {
+            guard let (status, data) = try? client.sendRaw("GET", "/v1/runs/\(runId)/diff"),
+                  (200..<300).contains(status) else { Out.die("no such run") }
+            FileHandle.standardOutput.write(data)
+            if data.last != 0x0A { print() }
+            return
+        }
+
+        // The human form is git's own output, unchanged. `?format=text` asks
+        // the daemon for exactly that rather than rebuilding a patch from the
+        // structure and getting the index lines subtly wrong.
+        guard let response = try? client.get("/v1/runs/\(runId)/diff?format=text",
+                                             as: API.TextResponse.self) else {
             Out.die("no such run")
         }
-        print(response.text.isEmpty ? Ansi.dim("  (no changes on that branch)") : response.text)
+        guard !response.text.isEmpty else {
+            print(Ansi.dim("  (no changes on that branch)"))
+            return
+        }
+        // One line of shape before the wall of text, from the same structured
+        // read the GUI gets. On stderr, deliberately: `ouro diff > patch` has
+        // always produced a file git can apply, and a summary line on stdout
+        // would quietly stop that being true.
+        if let report = try? client.get("/v1/runs/\(runId)/diff", as: DiffReport.self),
+           !report.isEmpty {
+            FileHandle.standardError.write(Data((Ansi.dim("  " + report.summary) + "\n\n").utf8))
+        }
+        print(response.text)
+    }
+
+    /// Would this branch still go in? The same test the drawer reads off the
+    /// snapshot, so the CLI and the panel cannot disagree about a merge.
+    static func mergeCheck(_ args: Args) {
+        guard let runId = args.positional.first else {
+            Out.die("usage: ouro merge-check <run-id>")
+        }
+        let client = Zero0.connected()
+        guard let verdict = try? client.get("/v1/runs/\(runId)/merge-check",
+                                            as: MergeVerdict.self) else {
+            Out.die("no such run, or it has no branch")
+        }
+        let pair = Ansi.dim("  \(String(verdict.baseSha.prefix(8)))..\(String(verdict.branchSha.prefix(8)))")
+        if let error = verdict.error {
+            Out.warn("could not tell: \(error)" + pair)
+            return
+        }
+        if verdict.clean {
+            Out.ok("merges into \(verdict.base)" + pair)
+            return
+        }
+        Out.warn("conflicts with \(verdict.base)" + pair)
+        for path in verdict.conflicts { print(Ansi.dim("    " + path)) }
+        print(Ansi.dim("    ouro fix — or rebase \(verdict.branch) onto \(verdict.base)"))
     }
 
     static func runAction(_ action: String, _ args: Args) {

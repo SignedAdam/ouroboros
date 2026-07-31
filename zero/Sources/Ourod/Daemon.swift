@@ -478,7 +478,23 @@ final class Daemon: @unchecked Sendable {
 
         case ("GET", 3) where path[2] == "diff":
             guard let run = runs.get(path[1]) else { return .error("no such run", status: 404) }
-            return .json(API.TextResponse(runId: run.id, text: supervisor.diff(run.id)))
+            // Structured is the contract; `?format=text` is the old blob, kept
+            // because the human `ouro diff` prints git's own output and should
+            // go on printing exactly that.
+            if request.q("format") == "text" {
+                return .json(API.TextResponse(runId: run.id, text: supervisor.diff(run.id)))
+            }
+            guard let report = supervisor.diffReport(run.id) else {
+                return .error("no such run", status: 404)
+            }
+            return .json(report)
+
+        case ("GET", 3) where path[2] == "merge-check":
+            guard let run = runs.get(path[1]) else { return .error("no such run", status: 404) }
+            guard let verdict = supervisor.mergeCheck(run.id) else {
+                return .error("that run has no branch to test", status: 409)
+            }
+            return .json(verdict)
 
         case ("GET", 3) where path[2] == "prompt":
             guard let run = runs.get(path[1]) else { return .error("no such run", status: 404) }
@@ -796,7 +812,22 @@ final class Daemon: @unchecked Sendable {
     // MARK: composed reads
 
     func inbox() -> [InboxItem] {
-        Inbox.build(runs: runs.all(), proposals: proposals.all())
+        Inbox.build(runs: checkedRuns(), proposals: proposals.all())
+    }
+
+    /// Every run, with a merge verdict attached to the ones a client might
+    /// render as waiting for you.
+    ///
+    /// This is the whole point of the check: no face of this product may call a
+    /// branch reviewable without having tried to merge it. Cached against the
+    /// pair of shas, so a poll that changes nothing does not fork git.
+    func checkedRuns() -> [Run] {
+        runs.all().map { run in
+            guard let verdict = supervisor.mergeCheckIfPending(run) else { return run }
+            var checked = run
+            checked.merge = verdict
+            return checked
+        }
     }
 
     func health() -> HealthDTO {
@@ -810,7 +841,7 @@ final class Daemon: @unchecked Sendable {
     }
 
     func snapshot() -> API.Snapshot {
-        let all = runs.all()
+        let all = checkedRuns()
         let recents = recentProjects().map { project in
             digests.digest(project, runs: all, defaultAgent: config.defaultAgent) { run in
                 Harness.of(agent: run.agent,

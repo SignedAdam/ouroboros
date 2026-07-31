@@ -75,7 +75,9 @@ public struct Notifier: Sendable {
     public init(config: Config) {
         self.webhook = config.discordWebhook
         self.macOS = config.notifyMacOS
-        self.enabledKinds = Set(config.notifyOn)
+        // Through `canonical`, so a config written before the rename still
+        // asks for the same notifications.
+        self.enabledKinds = Set(config.notifyOn.map(InboxItem.Kind.canonical))
     }
 
     public func notify(_ item: InboxItem) {
@@ -91,8 +93,8 @@ public struct Notifier: Sendable {
         switch kind {
         case .question: return "needs you"
         case .failed:   return "failed"
-        case .landed:   return "landed"
-        case .ready:    return "ready to merge"
+        case .merged:   return "merged"
+        case .review:   return "waiting for you"
         case .proposal: return "proposal"
         }
     }
@@ -101,8 +103,8 @@ public struct Notifier: Sendable {
         switch kind {
         case .question: return 0xFFBD2E
         case .failed:   return 0xFF5F56
-        case .landed:   return 0x7ED957
-        case .ready:    return 0x78AAFF
+        case .merged:   return 0x7ED957
+        case .review:   return 0x78AAFF
         case .proposal: return 0xFF7A18
         }
     }
@@ -178,13 +180,28 @@ public enum Inbox {
                         ?? run.result?.summary
                         ?? "Merged into \(run.mergedInto ?? "base")."
                     items.append(InboxItem(
-                        id: run.id, kind: .landed, projectName: run.projectName,
+                        id: run.id, kind: .merged, projectName: run.projectName,
                         title: run.title, detail: detail,
                         createdAt: run.endedAt ?? run.queuedAt, runId: run.id,
                         actions: ["diff", "undo", "ok"]))
+                } else if let verdict = run.merge, !verdict.clean, verdict.error == nil {
+                    // Tested, and it will not go in. Offering "merge" here is
+                    // how this product came to say `ready` about a branch it had
+                    // never tried to merge: an action that is known to fail is
+                    // worse than no action, because it reads as a verdict.
+                    let files = verdict.conflicts.prefix(3).joined(separator: ", ")
+                    let more = verdict.conflicts.count > 3
+                        ? " and \(verdict.conflicts.count - 3) more" : ""
+                    items.append(InboxItem(
+                        id: run.id, kind: .review, projectName: run.projectName,
+                        title: run.title,
+                        detail: "Verified, but \(run.branch ?? "its branch") no longer merges into "
+                            + "\(verdict.base) — conflicts in \(files)\(more). Rebase it, then merge.",
+                        createdAt: run.endedAt ?? run.queuedAt, runId: run.id,
+                        actions: ["diff", "drop"]))
                 } else {
                     items.append(InboxItem(
-                        id: run.id, kind: .ready, projectName: run.projectName,
+                        id: run.id, kind: .review, projectName: run.projectName,
                         title: run.title,
                         detail: run.note ?? "Verified on \(run.branch ?? "its branch") — waiting for you to merge.",
                         createdAt: run.endedAt ?? run.queuedAt, runId: run.id,
@@ -207,7 +224,7 @@ public enum Inbox {
         }
 
         // Questions first — they are the only items actively blocking work.
-        let rank: [InboxItem.Kind: Int] = [.question: 0, .failed: 1, .ready: 2, .proposal: 3, .landed: 4]
+        let rank: [InboxItem.Kind: Int] = [.question: 0, .failed: 1, .review: 2, .proposal: 3, .merged: 4]
         return items.sorted { a, b in
             let ra = rank[a.kind] ?? 9, rb = rank[b.kind] ?? 9
             return ra != rb ? ra < rb : a.createdAt > b.createdAt

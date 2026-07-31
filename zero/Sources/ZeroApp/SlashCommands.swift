@@ -326,7 +326,7 @@ final class SlashRunner: ObservableObject {
     }
 
     private func mergeRun(_ rawId: String) async {
-        guard let id = await resolveRun(rawId, kind: .ready) else {
+        guard let id = await resolveRun(rawId, kind: .review) else {
             report("nothing is verified and waiting to merge")
             return
         }
@@ -348,8 +348,8 @@ final class SlashRunner: ObservableObject {
     }
 
     private func undoRun(_ rawId: String) async {
-        guard let id = await resolveRun(rawId, kind: .landed) else {
-            report("nothing landed recently to undo")
+        guard let id = await resolveRun(rawId, kind: .merged) else {
+            report("nothing merged recently to undo")
             return
         }
         let reply = await Wire.post("/v1/runs/\(id)/undo", as: API.Message.self)

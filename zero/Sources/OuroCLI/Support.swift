@@ -90,6 +90,8 @@ enum Out {
     }
 
     static func ok(_ s: String) { print(Ansi.green("✓ ") + s) }
+    /// Not a failure, but not a yes either. `merge-check` needs a third answer.
+    static func warn(_ s: String) { print(Ansi.yellow("! ") + s) }
     static func info(_ s: String) { print(Ansi.dim(s)) }
 
     static func die(_ s: String, code: Int32 = 1) -> Never {
@@ -160,8 +162,8 @@ enum Fmt {
         switch kind {
         case .question: return Ansi.yellow("?")
         case .failed:   return Ansi.red("✗")
-        case .landed:   return Ansi.green("✓")
-        case .ready:    return Ansi.blue("→")
+        case .merged:   return Ansi.green("✓")
+        case .review:   return Ansi.blue("→")
         case .proposal: return Ansi.orange("◍")
         }
     }
@@ -170,8 +172,8 @@ enum Fmt {
         switch kind {
         case .question: return Ansi.yellow("needs you")
         case .failed:   return Ansi.red("failed")
-        case .landed:   return Ansi.green("landed")
-        case .ready:    return Ansi.blue("ready")
+        case .merged:   return Ansi.green("merged")
+        case .review:   return Ansi.blue("review")
         case .proposal: return Ansi.orange("proposal")
         }
     }

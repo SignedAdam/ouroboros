@@ -63,8 +63,8 @@ Five kinds of item, and nothing else — decisions only, never status:
 |---|---|
 | `needs you` | an agent stopped and asked a question → `ouro reply <run> "…"` |
 | `failed` | the run or the gate went red → `ouro log` / `ouro retry` |
-| `ready` | verified, waiting for permission to merge → `ouro merge <run>` |
-| `landed` | merged or PR open → `ouro diff` / `ouro undo` |
+| `review` | verified and waiting for you → `ouro merge <run>` |
+| `merged` | merged or PR open → `ouro diff` / `ouro undo` |
 | `proposal` | an AI operator suggested work → `ouro accept` / `ouro dismiss` |
 
 If it doesn't need a human, it isn't in there. There are no unread badges.
@@ -78,9 +78,10 @@ ouro i "…" [--fix] [-p proj] [--pr]    file an issue where you're standing
 ouro fix [issue-id]                    dispatch (newest open issue if omitted)
 ouro done <issue-id>                   confirm one is finished; clears its run
 ouro runs -w                           live table of every agent
-ouro log <run> -f  ·  ouro diff <run>
+ouro log <run> -f  ·  ouro diff <run> [--json]
 ouro reply <run> "…" [-a codex]        answer a question, optionally switch harness
 ouro merge <run>  ·  ouro undo <run>  ·  ouro stop <run>  ·  ouro retry <run>
+ouro merge-check <run>                 would this branch still go in?
 ouro inbox
 ouro idea "…"  ·  ouro ideas  ·  ouro promote <id> -p proj [--fix]
 ouro projects [add . | discover ~/dev | set <id> --verify "…" --autonomy auto]
@@ -180,7 +181,7 @@ enforced against the branch diff afterwards.
   "hotkey": "opt+space",            // capture combo; needs a modifier
   "repoPath": "~/dev/ouroboros",    // the checkout `ouro update` rebuilds from
   "discordWebhook": "https://…",    // inbox items ping here
-  "notifyOn": ["question", "failed", "landed", "ready"],
+  "notifyOn": ["question", "failed", "merged", "review"],
   "agents": {
     "claude": ["claude", "{prompt}"]
   }

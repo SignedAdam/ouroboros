@@ -85,6 +85,7 @@ case "done", "resolve":               Commands.done(args)
 case "runs", "ps":                    Commands.runs(args)
 case "log", "logs":                   Commands.log(args)
 case "diff":                          Commands.diff(args)
+case "merge-check", "mergecheck":     Commands.mergeCheck(args)
 case "reply", "stop", "merge", "undo", "retry", "ok", "drop", "ack":
                                       Commands.runAction(args.command, args)
 case "resume":                        Commands.resume(args)

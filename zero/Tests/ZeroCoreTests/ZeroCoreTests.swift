@@ -201,13 +201,13 @@ final class InboxTests: XCTestCase {
             run("failed", .failed),
             run("asked", .awaiting, result: AgentResult(outcome: "needs-input", question: "which?")),
         ], proposals: [])
-        XCTAssertEqual(items.map(\.kind), [.question, .failed, .landed])
+        XCTAssertEqual(items.map(\.kind), [.question, .failed, .merged])
         XCTAssertEqual(items[0].detail, "which?")
     }
 
     func testSucceededWithoutMergeIsReadyNotLanded() {
         let items = Inbox.build(runs: [run("x", .succeeded)], proposals: [])
-        XCTAssertEqual(items.first?.kind, .ready)
+        XCTAssertEqual(items.first?.kind, .review)
         XCTAssertTrue(items.first!.actions.contains("merge"))
     }
 
