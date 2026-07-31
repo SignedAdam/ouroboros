@@ -25,12 +25,18 @@ public enum RowVerb: String, CaseIterable, Sendable {
     case diff
     /// Puts `/reply <run>` in the field you are already looking at.
     case reply
+    /// Let a spent branch go: the base already has its work. The row goes on
+    /// the click, like a delete, and nothing else appears.
+    case discard
 
     // Verbs that open something else.
     case openFile, openFinder, openTerminal, openAgentView, openWorktree
     case resume, fix, retry
     /// The run's log, live, in its own terminal.
     case watch
+    /// Send the agent that wrote the branch back in to rebase and fix it. It
+    /// dispatches a supervised run, exactly as `fix` does.
+    case resolve
 
     /// True when another window is about to take the screen, so the capture
     /// panel steps aside rather than floating over it.
@@ -40,10 +46,10 @@ public enum RowVerb: String, CaseIterable, Sendable {
              .copyPath, .copyTitle, .copyCommand,
              .delete, .forget,
              .merge, .rebase, .undoMerge, .stop, .clear, .markDone,
-             .diff, .reply:
+             .diff, .reply, .discard:
             return false
         case .openFile, .openFinder, .openTerminal, .openAgentView, .openWorktree,
-             .resume, .fix, .retry, .watch:
+             .resume, .fix, .retry, .watch, .resolve:
             return true
         }
     }
@@ -55,8 +61,8 @@ public enum RowVerb: String, CaseIterable, Sendable {
     /// vanishes onto an unchanged screen reads as a click that did nothing.
     public var beat: Double {
         switch self {
-        case .fix, .retry: return 0.5
-        default:           return 0
+        case .fix, .retry, .resolve: return 0.5
+        default:                     return 0
         }
     }
 
@@ -74,6 +80,8 @@ public enum RowVerb: String, CaseIterable, Sendable {
         case .diff:          return "diff"
         case .merge:         return "merge"
         case .rebase:        return "rebase"
+        case .resolve:       return "resolve"
+        case .discard:       return "discard"
         case .undoMerge:     return "undo"
         case .markDone:      return "done"
         case .delete:        return "delete"
@@ -109,6 +117,10 @@ public enum RowVerb: String, CaseIterable, Sendable {
         case .diff:         return "plus.forwardslash.minus"
         case .merge:        return "arrow.triangle.merge"
         case .rebase:       return "arrow.triangle.branch"
+        // Not a hammer: `fix` already owns that, and this is the same agent
+        // being sent back to its own work rather than a new one starting.
+        case .resolve:      return "arrow.uturn.backward.badge.clock"
+        case .discard:      return "xmark.bin"
         case .undoMerge:    return "arrow.uturn.backward"
         case .markDone:     return "checkmark"
         case .delete:       return "trash"
@@ -140,6 +152,10 @@ public extension WorkState {
     /// offers `merge` in one place and not in another. `conflicts` is the whole
     /// argument for the table existing — it is the one state where the obvious
     /// verb is known to fail, so it is not offered.
+    ///
+    /// `resolve` comes first on `conflicts` because it is the only verb there
+    /// that ends the situation. `rebase` is the fallback for when a person
+    /// would rather do it themselves, and it stays last.
     var verbs: [RowVerb] {
         switch self {
         case .filed:     return [.fix, .markDone]
@@ -147,7 +163,10 @@ public extension WorkState {
         case .running:   return [.watch, .stop]
         case .asking:    return [.reply, .watch]
         case .review:    return [.diff, .merge, .markDone]
-        case .conflicts: return [.diff, .rebase]
+        case .conflicts: return [.resolve, .diff, .rebase]
+        // Nothing to rescue and nothing to merge. Read it if you want to see
+        // what it was, then let it go.
+        case .obsolete:  return [.diff, .discard]
         case .merged:    return [.diff, .undoMerge, .markDone]
         case .failed:    return [.diff, .retry, .markDone]
         case .stopped:   return [.retry, .markDone]
@@ -158,7 +177,7 @@ public extension WorkState {
     /// written one yet.
     var hasDiff: Bool {
         switch self {
-        case .review, .conflicts, .merged, .failed, .stopped: return true
+        case .review, .conflicts, .obsolete, .merged, .failed, .stopped: return true
         case .filed, .queued, .running, .asking: return false
         }
     }

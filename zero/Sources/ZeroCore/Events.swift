@@ -184,6 +184,18 @@ public enum Inbox {
                         title: run.title, detail: detail,
                         createdAt: run.endedAt ?? run.queuedAt, runId: run.id,
                         actions: ["diff", "undo", "ok"]))
+                } else if let verdict = run.merge, verdict.spent {
+                    // Its work is already on the base — re-applied by hand, or
+                    // cherry-picked in. Nothing to review and nothing to merge,
+                    // so the only thing to decide is whether to let the branch
+                    // go. Quiet: nothing went wrong here.
+                    items.append(InboxItem(
+                        id: run.id, kind: .review, projectName: run.projectName,
+                        title: run.title,
+                        detail: "\(run.branch ?? "Its branch") has nothing left to give — "
+                            + "\(verdict.staleness?.reason ?? "its work is already on \(verdict.base)").",
+                        createdAt: run.endedAt ?? run.queuedAt, runId: run.id,
+                        actions: ["diff", "discard"]))
                 } else if let verdict = run.merge, !verdict.clean, verdict.error == nil {
                     // Tested, and it will not go in. Offering "merge" here is
                     // how this product came to say `ready` about a branch it had
@@ -196,9 +208,10 @@ public enum Inbox {
                         id: run.id, kind: .review, projectName: run.projectName,
                         title: run.title,
                         detail: "Verified, but \(run.branch ?? "its branch") no longer merges into "
-                            + "\(verdict.base) — conflicts in \(files)\(more). Rebase it, then merge.",
+                            + "\(verdict.base) — conflicts in \(files)\(more). "
+                            + "Send \(run.agent) back to it, or rebase it yourself.",
                         createdAt: run.endedAt ?? run.queuedAt, runId: run.id,
-                        actions: ["diff", "rebase", "drop"]))
+                        actions: ["resolve", "diff", "rebase"]))
                 } else {
                     items.append(InboxItem(
                         id: run.id, kind: .review, projectName: run.projectName,

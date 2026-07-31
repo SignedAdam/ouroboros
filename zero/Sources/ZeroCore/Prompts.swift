@@ -168,6 +168,129 @@ public enum SupervisedPrompt {
         return out
     }
 
+    /// What a `resolve` run is told.
+    ///
+    /// The whole reason this is a resume and not a fresh dispatch is that the
+    /// agent already knows why it wrote those lines. So this says as little as
+    /// possible about the work and everything about the situation: which two
+    /// commits stopped agreeing, which files, and what it is allowed to decide
+    /// on its own.
+    public struct ConflictContext {
+        public var branch: String
+        public var base: String
+        public var branchSha: String
+        public var baseSha: String
+        public var files: [String]
+        public var resultPath: String
+        public var verifyCmd: String?
+        /// The issue this branch was about. Sent only to a fresh agent — the
+        /// one being resumed wrote it and does not need it read back.
+        public var issue: String?
+        /// The conversation could not be reopened, so this is a different agent
+        /// picking up somebody else's branch. It has to be told that.
+        public var fresh: Bool
+
+        public init(branch: String, base: String, branchSha: String, baseSha: String,
+                    files: [String], resultPath: String, verifyCmd: String? = nil,
+                    issue: String? = nil, fresh: Bool = false) {
+            self.branch = branch
+            self.base = base
+            self.branchSha = branchSha
+            self.baseSha = baseSha
+            self.files = files
+            self.resultPath = resultPath
+            self.verifyCmd = verifyCmd
+            self.issue = issue
+            self.fresh = fresh
+        }
+    }
+
+    public static func resolve(_ ctx: ConflictContext) -> String {
+        var out = ctx.fresh
+            ? """
+              You are running inside Ouroboros, which is supervising this run.
+
+              A branch needs rescuing and the agent that wrote it could not be reached — its
+              conversation is gone. You are reading this work for the first time, so read it
+              before you touch it: `git log \(ctx.base)..\(ctx.branch)` and \
+              `git diff \(ctx.base)...\(ctx.branch)`.
+
+              """
+            : """
+              You are running inside Ouroboros, which is supervising this run.
+
+              This is the branch you wrote earlier in this conversation. It no longer merges.
+
+              """
+
+        out += """
+        `\(ctx.branch)` no longer merges into `\(ctx.base)`.
+
+        Compared: `\(String(ctx.baseSha.prefix(12)))` (\(ctx.base)) \
+        against `\(String(ctx.branchSha.prefix(12)))` (\(ctx.branch)).
+
+        """
+
+        if ctx.files.isEmpty {
+            out += "git did not name the files; run the merge test yourself to find them.\n"
+        } else {
+            out += "git cannot merge these on its own:\n\n"
+            for file in ctx.files { out += "  \(file)\n" }
+        }
+
+        if let issue = ctx.issue, !issue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            out += "\nWhat the branch was for:\n\n\(issue)\n"
+        }
+
+        out += """
+
+        Rebase `\(ctx.branch)` onto `\(ctx.base)` and resolve the conflicts.
+
+        Where the resolution is obvious, take it. You know what your change was for; most
+        conflicts are two edits to neighbouring lines and keeping both is simply correct.
+
+        Where it is NOT obvious, stop and ask. Do not guess, and do not pick a side to make
+        the build pass — a green build on the wrong half of a conflict is worse than an
+        unresolved branch, because it looks finished. Stopping is a good outcome here, not a
+        failure: say what each side is trying to do and name the one thing you need decided.
+        Then abort the rebase so the branch is left exactly as it was, and write the result
+        file with outcome "needs-input".
+
+        """
+
+        if let verify = ctx.verifyCmd, !verify.isEmpty {
+            out += """
+            Ouroboros will independently run `\(verify)` on your branch after you exit, and the
+            merge will be re-tested. Run it yourself and get it green first.
+
+            """
+        }
+
+        out += """
+        When the rebase is done and the conflicts are resolved, STOP. Specifically, do NOT:
+          · merge, or push anything
+          · switch branches or remove this worktree
+          · move or resolve the issue file
+
+        Ouroboros re-verifies the branch and re-tests the merge itself. You produce a branch
+        that merges; you never perform the merge.
+
+        Last thing before you exit, write this file:
+
+           \(ctx.resultPath)
+
+           containing exactly one JSON object:
+
+           {"outcome": "done", "summary": "<1-2 sentences, past tense, how you resolved it>", \
+        "filesChanged": ["path/one"]}
+
+           `outcome` is one of "done", "needs-input", "blocked". For "needs-input", include a
+           "question" field holding the single thing you need answered — that question is what
+           the human sees, so make it answerable in a sentence.
+        """
+        return out
+    }
+
     /// A `## Resolution` section, appended to the issue file by Ouroboros using
     /// the agent's own summary — deterministic, and it happens even when the
     /// agent forgot.

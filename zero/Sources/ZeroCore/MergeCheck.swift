@@ -29,10 +29,14 @@ public struct MergeVerdict: Codable, Sendable, Equatable {
     /// Set when the question could not be asked at all — no such ref, not a
     /// repo, git too old. Distinct from a confident "no".
     public var error: String?
+    /// Whether the branch still has anything to give. A branch whose work is
+    /// already upstream conflicts exactly like one whose work is not, and the
+    /// two want opposite things from a person. See `Staleness`.
+    public var staleness: Staleness?
 
     public init(base: String, branch: String, baseSha: String, branchSha: String,
                 clean: Bool, conflicts: [String] = [], checkedAt: Date = Date(),
-                error: String? = nil) {
+                error: String? = nil, staleness: Staleness? = nil) {
         self.base = base
         self.branch = branch
         self.baseSha = baseSha
@@ -41,6 +45,7 @@ public struct MergeVerdict: Codable, Sendable, Equatable {
         self.conflicts = conflicts
         self.checkedAt = checkedAt
         self.error = error
+        self.staleness = staleness
     }
 
     /// A daemon older than this type sends nothing; every field defaults rather
@@ -55,7 +60,12 @@ public struct MergeVerdict: Codable, Sendable, Equatable {
         conflicts = try c.decodeIfPresent([String].self, forKey: .conflicts) ?? []
         checkedAt = try c.decodeIfPresent(Date.self, forKey: .checkedAt) ?? Date()
         error = try c.decodeIfPresent(String.self, forKey: .error)
+        staleness = try c.decodeIfPresent(Staleness.self, forKey: .staleness)
     }
+
+    /// Nothing left to give. Only ever a real answer: "we could not tell"
+    /// must not become "throw the branch away".
+    public var spent: Bool { error == nil && staleness?.spent == true }
 
     /// The pair this verdict is about. Two verdicts with the same key are the
     /// same verdict, however long ago either was taken.
@@ -71,7 +81,101 @@ public struct MergeVerdict: Codable, Sendable, Equatable {
     /// because "we could not tell" must not render as "it merges".
     public var state: String {
         if error != nil { return "unknown" }
+        if spent { return "obsolete" }
         return clean ? "review" : "conflicts"
+    }
+}
+
+// MARK: - has this branch anything left to give?
+
+/// Whether a branch is spent, and the evidence for saying so.
+///
+/// `merge-tree` answers "would this go in". It cannot answer "is there anything
+/// in here worth putting in", and the two look identical from outside: a branch
+/// whose work somebody re-applied by hand still conflicts, still verified green,
+/// and still asks a person to sit down and resolve something that is finished.
+///
+/// Two ways a branch can be spent, and they need different questions:
+///
+///   **cherry-picked or rebased upstream** — `git cherry` finds a patch-id
+///   equivalent for every commit. Exact, and it is the answer whenever the
+///   commits themselves went in.
+///
+///   **re-implemented upstream** — somebody read the branch and wrote the same
+///   thing again, usually because the base moved so far that replaying it was
+///   not worth attempting. No patch-id survives that, so `git cherry` says
+///   nothing. What does survive is the content: the lines are on the base, in a
+///   form the base has since carried on editing.
+///
+/// The second question is a measurement, so it is reported as one — the numbers
+/// are on the struct and the row can say `551 of 590 lines already on main`
+/// rather than asking anyone to take `obsolete` on trust.
+public struct Staleness: Codable, Sendable, Equatable {
+    /// Commits on the branch that are not on the base.
+    public var commits: Int
+    /// Of those, how many `git cherry` found already upstream.
+    public var commitsUpstream: Int
+    /// Lines the branch adds, measured from where it forked.
+    public var added: Int
+    /// Of those, how many the base's own copy of that same file already has.
+    public var addedUpstream: Int
+    /// Files the branch creates that the base has never seen. One of these and
+    /// the branch is certainly not spent, whatever the line counts say — this
+    /// is the guard that keeps a measurement from deleting somebody's work.
+    public var newFiles: Int
+
+    public init(commits: Int = 0, commitsUpstream: Int = 0, added: Int = 0,
+                addedUpstream: Int = 0, newFiles: Int = 0) {
+        self.commits = commits
+        self.commitsUpstream = commitsUpstream
+        self.added = added
+        self.addedUpstream = addedUpstream
+        self.newFiles = newFiles
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        commits = try c.decodeIfPresent(Int.self, forKey: .commits) ?? 0
+        commitsUpstream = try c.decodeIfPresent(Int.self, forKey: .commitsUpstream) ?? 0
+        added = try c.decodeIfPresent(Int.self, forKey: .added) ?? 0
+        addedUpstream = try c.decodeIfPresent(Int.self, forKey: .addedUpstream) ?? 0
+        newFiles = try c.decodeIfPresent(Int.self, forKey: .newFiles) ?? 0
+    }
+
+    /// At most one added line in ten may still be missing from the base. Stated
+    /// here rather than buried in an `if`, because it is the one number in this
+    /// file that is a judgement: patch-ids and file lists are exact, and how
+    /// much drift still counts as "the same work" is not.
+    ///
+    /// The two branches this was built against sit at 93% and 13%, which is the
+    /// margin the bar has to fall inside. It is deliberately not 100%: the base
+    /// has usually gone on editing the very lines it took, so a re-applied
+    /// branch is never a subset of it.
+    public static let carriedOver = 0.9
+
+    /// The whole point of the type, in one expression.
+    public var spent: Bool {
+        // Nothing on the branch at all is not "spent", it is "empty" — and
+        // `merge-base --is-ancestor` has already answered that case.
+        guard commits > 0 else { return false }
+        // It still brings a file the base has never seen. Not spent, and no
+        // amount of line-counting may say otherwise.
+        guard newFiles == 0 else { return false }
+        if commitsUpstream == commits { return true }
+        guard added > 0 else { return false }
+        return Double(addedUpstream) >= Double(added) * Staleness.carriedOver
+    }
+
+    /// Why, in the words the row and the CLI both print. Never a bare verdict:
+    /// `obsolete` is a claim about somebody's work and it has to show its
+    /// working.
+    public var reason: String {
+        if commits > 0, commitsUpstream == commits {
+            return commits == 1
+                ? "its commit is already on the base"
+                : "all \(commits) commits are already on the base"
+        }
+        return "\(addedUpstream) of \(added) lines are already on the base"
     }
 }
 
@@ -128,7 +232,7 @@ public final class MergeChecks: @unchecked Sendable {
 
         let result = git.run(["merge-tree", "--write-tree", "--name-only", baseSha, branchSha],
                              timeout: 60)
-        let verdict: MergeVerdict
+        var verdict: MergeVerdict
         switch result.status {
         case 0:
             verdict = MergeVerdict(base: base, branch: branch,
@@ -148,8 +252,72 @@ public final class MergeChecks: @unchecked Sendable {
                                    clean: false, checkedAt: now,
                                    error: MergeChecks.reason(result.output))
         }
+        // Asked for every verdict, not only the conflicting ones: a spent branch
+        // can merge cleanly too, and offering `merge` on one produces an empty
+        // commit and a row that then claims a fix landed.
+        if verdict.error == nil {
+            verdict.staleness = MergeChecks.staleness(git, base: baseSha, branch: branchSha)
+        }
         store(key, verdict)
         return verdict
+    }
+
+    /// Has the base already got what this branch is carrying?
+    ///
+    /// Two reads, both cheap enough to do once per pair of commits: `git cherry`
+    /// for the patch-id answer, and the branch's own additions against the
+    /// base's copy of each file for the re-implemented one. See `Staleness`.
+    static func staleness(_ git: Git, base: String, branch: String) -> Staleness {
+        var out = Staleness()
+
+        // `git cherry <upstream> <head>`: one line per commit, `-` when git
+        // found the same patch upstream, `+` when it did not.
+        let cherry = git.run(["cherry", base, branch], timeout: 60)
+        if cherry.ok {
+            for line in cherry.output.split(separator: "\n") {
+                guard let mark = line.first, mark == "+" || mark == "-" else { continue }
+                out.commits += 1
+                if mark == "-" { out.commitsUpstream += 1 }
+            }
+        }
+
+        let fork = git.run(["merge-base", base, branch], timeout: 20)
+        guard fork.ok, !fork.trimmed.isEmpty else { return out }
+        let forkPoint = fork.trimmed
+
+        // Files, with their status, so a branch that introduces something the
+        // base has never seen is caught before any line is counted.
+        let named = git.run(["diff", "--name-status", "--diff-filter=AMR",
+                             forkPoint, branch], timeout: 60)
+        guard named.ok else { return out }
+
+        for line in named.output.split(separator: "\n") {
+            let fields = line.split(separator: "\t").map(String.init)
+            guard fields.count >= 2 else { continue }
+            // A rename reports old and new; the branch's version is the last.
+            let path = fields[fields.count - 1]
+            let onBase = git.run(["show", "\(base):\(path)"], timeout: 30)
+            guard onBase.ok else { out.newFiles += 1; continue }
+
+            var present: Set<String> = []
+            for baseLine in onBase.output.split(separator: "\n", omittingEmptySubsequences: false) {
+                let trimmed = baseLine.trimmingCharacters(in: .whitespaces)
+                if !trimmed.isEmpty { present.insert(trimmed) }
+            }
+
+            // `-U0`: the added lines and nothing else. Context would count lines
+            // the branch never wrote as lines it contributed.
+            let patch = git.run(["diff", "-U0", forkPoint, branch, "--", path], timeout: 60)
+            guard patch.ok else { continue }
+            for patchLine in patch.output.split(separator: "\n") {
+                guard patchLine.hasPrefix("+"), !patchLine.hasPrefix("+++") else { continue }
+                let text = patchLine.dropFirst().trimmingCharacters(in: .whitespaces)
+                if text.isEmpty { continue }
+                out.added += 1
+                if present.contains(text) { out.addedUpstream += 1 }
+            }
+        }
+        return out
     }
 
     /// The conflicted paths out of `merge-tree --name-only`.

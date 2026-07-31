@@ -259,8 +259,18 @@ public final class Supervisor: @unchecked Sendable {
         if harness.acceptsSessionId { run.sessionId = sessionId }
         runs.save(run)
 
-        let agentArgv = Agents.dispatchArgv(template: template, prompt: prompt,
+        // A resolve run continues a conversation rather than opening one. It is
+        // not a special kind of run — same shim, same log, same gate — only a
+        // different way of handing it the prompt.
+        let agentArgv: [String]
+        if run.resumeMode == "resumed",
+           let resumed = Agents.resumeArgv(harness: harness, template: template,
+                                           sessionId: sessionId, prompt: prompt) {
+            agentArgv = resumed
+        } else {
+            agentArgv = Agents.dispatchArgv(template: template, prompt: prompt,
                                             sessionId: sessionId, harness: harness)
+        }
         let argv = [ouroPath, "run-shim", run.id, "--home", home, "--"] + agentArgv
 
         let invocation = AgentInvocation(argv: argv, cwd: run.cwd, label: run.id, title: run.title)
@@ -389,7 +399,29 @@ public final class Supervisor: @unchecked Sendable {
             return
         }
 
-        // 2. A non-zero exit with nothing to show for it.
+        let tail = runs.tailLog(id, lines: 40)
+
+        // 2. The harness had forgotten the conversation. That is not a failed
+        // run, it is a run that never started, so a fresh agent gets the same
+        // brief and the two are told apart on the record.
+        //
+        // Checked here rather than down with "the agent committed nothing",
+        // because a resolve run is handed a branch that already has commits on
+        // it — every test below this line would pass while nothing happened.
+        if run.resumeMode == "resumed", run.result == nil, (run.exitCode ?? 0) != 0,
+           Supervisor.lostTheConversation(tail) {
+            runs.mutate(id) {
+                $0.status = .abandoned
+                $0.endedAt = $0.endedAt ?? Date()
+                $0.acknowledged = true
+                $0.note = "\($0.agent) could not reopen that conversation — starting fresh"
+            }
+            if let dead = runs.get(id) { startOver(dead) }
+            tick()
+            return
+        }
+
+        // 3. A non-zero exit with nothing to show for it.
         let git = Git(project.path)
         let branch = run.branch
         let hasWork = branch.map { git.hasCommits(on: $0, notOn: run.base) } ?? false
@@ -401,7 +433,6 @@ public final class Supervisor: @unchecked Sendable {
             // Put the agent's own last words in the inbox. Without this, every
             // failure reads the same and you have to go digging through a log to
             // learn something as basic as "your API key is out of credit".
-            let tail = runs.tailLog(id, lines: 40)
             if let lastWords = Supervisor.lastWords(tail) {
                 reason += " — it said: \(lastWords)"
             }
@@ -413,7 +444,7 @@ public final class Supervisor: @unchecked Sendable {
             return
         }
 
-        // 3. Protected paths.
+        // 4. Protected paths.
         if !project.policy.protectedPaths.isEmpty, let branch {
             let touched = git.changedFiles(branch: branch, base: run.base)
             let violations = touched.filter { file in
@@ -426,7 +457,7 @@ public final class Supervisor: @unchecked Sendable {
             }
         }
 
-        // 4. The gate. This is the line between "an agent ran" and "a fix landed".
+        // 5. The gate. This is the line between "an agent ran" and "a fix landed".
         if let verifyCmd = project.verifyCmd, !verifyCmd.isEmpty {
             let cwd = run.worktreePath ?? project.path
             let outcome = Shell.runLine(verifyCmd, cwd: cwd, timeout: verifyTimeout)
@@ -440,7 +471,7 @@ public final class Supervisor: @unchecked Sendable {
             }
         }
 
-        // 5. Green. Land it according to the finish the caller asked for.
+        // 6. Green. Land it according to the finish the caller asked for.
         guard let latest = runs.get(id) else { return }
         run = latest
         runs.mutate(id) { $0.status = .finishing }
@@ -635,6 +666,204 @@ public final class Supervisor: @unchecked Sendable {
         return result
     }
 
+    // MARK: - resolve
+
+    /// Send the agent that wrote the branch back in to rebase and fix it.
+    ///
+    /// Resume, not re-dispatch. The agent that wrote the lines is the only party
+    /// that knows why: it is remembering a decision it took an hour ago, where a
+    /// fresh agent reading `<<<<<<<` is inferring intent from syntax. Both are
+    /// supervised identically — shim, log, gate, inbox — because this is not a
+    /// special case, it is a run whose first message is a conflict report.
+    ///
+    /// It never lands anything. The finish is inherited from the run it is
+    /// rescuing, and Ouroboros re-verifies and re-tests the merge afterwards, so
+    /// the run comes back `review` if it worked and `conflicts` again if it did
+    /// not.
+    public func resolve(_ id: String) -> (run: Run?, message: String) {
+        guard let previous = runs.get(id), let project = registry.find(previous.projectId) else {
+            return (nil, "no such run")
+        }
+        guard let branch = previous.branch else { return (nil, "that run has no branch") }
+        guard let verdict = mergeCheck(id) else {
+            return (nil, "that run has no branch to test")
+        }
+        if let error = verdict.error {
+            return (nil, "could not test the merge: \(error)")
+        }
+        if verdict.spent {
+            return (nil, "\(branch) has nothing left to give — \(verdict.staleness?.reason ?? "its work is already on \(previous.base)")")
+        }
+        guard !verdict.clean else {
+            return (nil, "\(branch) already merges into \(previous.base) — nothing to resolve")
+        }
+
+        let template = config.agentTemplate(previous.agent)
+        let harness = Harness.of(agent: previous.agent, template: template)
+        guard harness.canResume else {
+            return (nil, "\(previous.agent) cannot reopen a conversation")
+        }
+        guard let sessionId = previous.sessionId else {
+            return (nil, "that run has no recorded conversation — it predates session capture")
+        }
+
+        // The branch has to be checked out somewhere the agent can work. Its own
+        // worktree is that place; if it has been cleaned away, put it back
+        // rather than sending an agent into the repo you are working in.
+        guard let worktree = worktree(for: previous, project: project) else {
+            return (nil, "could not put \(branch) back in a worktree")
+        }
+
+        var run = Run(
+            id: Zero.newID("r"),
+            projectId: previous.projectId,
+            projectName: previous.projectName,
+            kind: previous.kind,
+            agent: previous.agent,
+            title: previous.title,
+            issuePath: previous.issuePath,
+            cwd: worktree,
+            worktreePath: worktree,
+            branch: branch,
+            base: previous.base,
+            finish: previous.finish,
+            status: .queued
+        )
+        run.sessionId = sessionId
+        run.resolveOf = previous.id
+        run.resumeMode = "resumed"
+        run.prompt = SupervisedPrompt.resolve(conflictContext(previous, project: project,
+                                                              verdict: verdict,
+                                                              resultPath: runs.resultPath(run.id),
+                                                              fresh: false))
+        run.note = "resolving \(branch) — resumed \(previous.agent) conversation \(sessionId)"
+        runs.save(run)
+        // The old run's job is done either way: whatever happens next happens on
+        // the new one, and leaving both in the inbox asks about one thing twice.
+        runs.mutate(previous.id) { $0.acknowledged = true }
+        publish("run.queued", run)
+        work.async { [weak self] in self?.tick() }
+        return (run, "\(previous.agent) is back on \(branch)")
+    }
+
+    /// Everything the seed prompt needs about the disagreement.
+    private func conflictContext(_ run: Run, project: Project, verdict: MergeVerdict,
+                                 resultPath: String, fresh: Bool) -> SupervisedPrompt.ConflictContext {
+        // Only a fresh agent is read the issue back. The one being resumed wrote
+        // the branch from it and does not need it quoting at itself.
+        var issue: String?
+        if fresh, let issuePath = run.issuePath,
+           let filed = IssueService.store(for: project).read(path: issuePath) {
+            issue = "## \(filed.title)\n\n\(filed.body)"
+        }
+        return SupervisedPrompt.ConflictContext(
+            branch: run.branch ?? "its branch",
+            base: run.base,
+            branchSha: verdict.branchSha,
+            baseSha: verdict.baseSha,
+            files: verdict.conflicts,
+            resultPath: resultPath,
+            verifyCmd: project.verifyCmd,
+            issue: issue,
+            fresh: fresh)
+    }
+
+    /// The harness had forgotten the session. Same brief, plus the issue, to an
+    /// agent that has never seen this branch — and the run says which it was.
+    private func startOver(_ run: Run) {
+        guard let project = registry.find(run.projectId), let verdict = run.merge ?? mergeCheck(run.id)
+        else { return }
+        var fresh = Run(
+            id: Zero.newID("r"),
+            projectId: run.projectId,
+            projectName: run.projectName,
+            kind: run.kind,
+            agent: run.agent,
+            title: run.title,
+            issuePath: run.issuePath,
+            cwd: run.cwd,
+            worktreePath: run.worktreePath,
+            branch: run.branch,
+            base: run.base,
+            finish: run.finish,
+            status: .queued
+        )
+        fresh.resolveOf = run.resolveOf ?? run.id
+        fresh.resumeMode = "fresh"
+        fresh.prompt = SupervisedPrompt.resolve(
+            conflictContext(run, project: project, verdict: verdict,
+                            resultPath: runs.resultPath(fresh.id), fresh: true))
+        fresh.note = "the \(run.agent) conversation was gone — a new agent is reading the branch cold"
+        runs.save(fresh)
+        runs.mutate(run.id) { $0.acknowledged = true }
+        publish("run.queued", fresh)
+        work.async { [weak self] in self?.tick() }
+    }
+
+    /// The run's worktree, put back if it has been cleaned away. Nil when the
+    /// branch cannot be checked out anywhere of its own.
+    private func worktree(for run: Run, project: Project) -> String? {
+        let fm = FileManager.default
+        if let path = run.worktreePath, fm.fileExists(atPath: path) { return path }
+        guard let branch = run.branch else { return nil }
+        let path = run.worktreePath ?? (project.path as NSString)
+            .appendingPathComponent(".ouroboros/worktrees/\(IssueText.slugify(run.title))")
+        let git = Git(project.path)
+        // `--force` only overrides git's "already checked out somewhere" guard,
+        // which is exactly the state a half-removed worktree leaves behind.
+        git.run(["worktree", "prune"], timeout: 30)
+        let added = git.run(["worktree", "add", "--force", path, branch], timeout: 120)
+        return added.ok ? path : nil
+    }
+
+    /// Let a spent branch go: delete it, drop its worktree, close the run.
+    ///
+    /// Refused unless the branch really is spent. `discard` is the one verb here
+    /// that destroys something, so it is not allowed to act on a guess — and the
+    /// tip sha goes in the message, because a deleted branch that nobody wrote
+    /// down is a deleted branch nobody can get back.
+    public func discard(_ id: String) -> (ok: Bool, message: String) {
+        guard let run = runs.get(id), let project = registry.find(run.projectId) else {
+            return (false, "no such run")
+        }
+        guard let branch = run.branch else { return (false, "that run has no branch") }
+        guard let verdict = mergeCheck(id), verdict.spent else {
+            return (false, "\(branch) still has work on it — resolve or rebase it instead")
+        }
+
+        let git = Git(project.path)
+        let sha = String(verdict.branchSha.prefix(12))
+        if let worktreePath = run.worktreePath,
+           FileManager.default.fileExists(atPath: worktreePath) {
+            git.run(["worktree", "remove", worktreePath, "--force"], timeout: 60)
+        }
+        git.run(["worktree", "prune"], timeout: 30)
+        let deleted = git.run(["branch", "-D", branch], timeout: 30)
+        guard deleted.ok else {
+            return (false, "could not delete \(branch): \(Supervisor.firstLine(deleted.output))")
+        }
+        // `abandoned`, not `succeeded`: this run produced nothing that survives.
+        // Leaving it succeeded with no branch would flip the row to `review` and
+        // offer a merge of nothing, which is the same class of lie as calling an
+        // untested branch ready. The note carries the sha, because a deleted
+        // branch nobody wrote down is a deleted branch nobody can get back.
+        runs.mutate(id) {
+            $0.status = .abandoned
+            $0.acknowledged = true
+            $0.branch = nil
+            $0.worktreePath = nil
+            $0.merge = nil
+            $0.note = "discarded \(branch) at \(sha) — "
+                + (verdict.staleness?.reason ?? "its work was already on \(run.base)")
+        }
+        return (true, "discarded \(branch)  \(sha)")
+    }
+
+    static func firstLine(_ text: String) -> String {
+        text.split(separator: "\n").first.map(String.init)?
+            .trimmingCharacters(in: .whitespaces) ?? "git said nothing"
+    }
+
     @discardableResult
     public func stop(_ id: String) -> Run? {
         guard let run = runs.get(id) else { return nil }
@@ -807,6 +1036,30 @@ public final class Supervisor: @unchecked Sendable {
                  + "shell, or set an absolute path in ~/.ouroboros/config.json."
         }
         return nil
+    }
+
+    /// Has the harness told us it no longer has that conversation?
+    ///
+    /// The rule this was written to was "a resume that exits non-zero without
+    /// output", and that is not what happens. `claude --resume <gone> -p` exits
+    /// 1 and says so in a sentence:
+    ///
+    ///     No conversation found with session ID: 0000…
+    ///
+    /// Silence is still one of the shapes — a harness can die before printing
+    /// anything — so both count. Getting this wrong is not harmless: it puts
+    /// "the agent exited 1 without committing anything" in the inbox for a run
+    /// that never started, and the fresh-agent fallback never fires.
+    static func lostTheConversation(_ log: String) -> Bool {
+        let text = log.lowercased()
+        for phrase in ["no conversation found with session id",
+                       "session not found",
+                       "no such session",
+                       "could not find session",
+                       "no rollout found"] where text.contains(phrase) {
+            return true
+        }
+        return lastWords(log) == nil
     }
 
     /// The last meaningful line an agent printed, stripped of the ANSI noise a

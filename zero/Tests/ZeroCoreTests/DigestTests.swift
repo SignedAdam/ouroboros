@@ -341,10 +341,15 @@ final class WorkStateWordsTests: XCTestCase {
             status: .succeeded, mergedInto: mergedInto, merge: merge)
     }
 
-    private func verdict(clean: Bool, error: String? = nil) -> MergeVerdict {
+    private func verdict(clean: Bool, error: String? = nil,
+                         staleness: Staleness? = nil) -> MergeVerdict {
         MergeVerdict(base: "main", branch: "fix/t", baseSha: "aaa", branchSha: "bbb",
-                     clean: clean, conflicts: clean ? [] : ["a.swift"], error: error)
+                     clean: clean, conflicts: clean ? [] : ["a.swift"], error: error,
+                     staleness: staleness)
     }
+
+    /// Every commit already on the base.
+    private let spent = Staleness(commits: 2, commitsUpstream: 2)
 
     func testAVerifiedBranchThatStillMergesIsUpForReview() {
         XCTAssertEqual(WorkState.of(succeeded(merge: verdict(clean: true))), .review)
@@ -361,6 +366,46 @@ final class WorkStateWordsTests: XCTestCase {
     func testAnUnaskableQuestionIsNotAConflict() {
         let unknown = verdict(clean: false, error: "not a git repository")
         XCTAssertEqual(WorkState.of(succeeded(merge: unknown)), .review)
+    }
+
+    /// A branch whose work is already on the base conflicts exactly like one
+    /// whose work is not, and the two want opposite things from a person. Asked
+    /// first, so `obsolete` wins over `conflicts` rather than the other way
+    /// round — sending somebody to resolve finished work is the whole bug.
+    func testASpentBranchIsObsoleteRatherThanConflicting() {
+        XCTAssertEqual(WorkState.of(succeeded(merge: verdict(clean: false, staleness: spent))),
+                       .obsolete)
+    }
+
+    /// It can happen the other way too: a spent branch that still merges. Saying
+    /// `review` there offers a merge that produces an empty commit and a row
+    /// claiming a fix landed.
+    func testASpentBranchThatStillMergesIsAlsoObsolete() {
+        XCTAssertEqual(WorkState.of(succeeded(merge: verdict(clean: true, staleness: spent))),
+                       .obsolete)
+    }
+
+    /// And the third answer again, this time against the thing that deletes a
+    /// branch: a question git could not answer is not permission to throw work
+    /// away.
+    func testAnUnaskableQuestionIsNeverObsolete() {
+        let unknown = verdict(clean: false, error: "not a git repository", staleness: spent)
+        XCTAssertEqual(WorkState.of(succeeded(merge: unknown)), .review)
+    }
+
+    /// A branch with something still on it stays a conflict, whatever else the
+    /// verdict carries.
+    func testABranchWithSomethingLeftIsStillAConflict() {
+        let partial = Staleness(commits: 2, commitsUpstream: 1, added: 100, addedUpstream: 40)
+        XCTAssertEqual(WorkState.of(succeeded(merge: verdict(clean: false, staleness: partial))),
+                       .conflicts)
+    }
+
+    /// What went in outranks everything: a merged run is `merged` even if its
+    /// branch would now also read as spent.
+    func testMergedOutranksObsolete() {
+        XCTAssertEqual(WorkState.of(succeeded(merge: verdict(clean: true, staleness: spent),
+                                              mergedInto: "main")), .merged)
     }
 
     /// No verdict at all — an older daemon, or a run nobody has tested yet.

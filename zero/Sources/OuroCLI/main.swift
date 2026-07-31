@@ -32,7 +32,9 @@ func help() {
         ("  ouro diff <run>", "what it changed"),
         ("  ouro reply <run> \"use the second approach\"", "answer an agent's question"),
         ("  ouro merge <run> / undo <run>", "land it / take it back"),
+        ("  ouro resolve <run>", "send its agent back to rebase and fix the conflicts"),
         ("  ouro rebase <run>", "put its branch back on top of its base"),
+        ("  ouro discard <run>", "let a spent branch go"),
         ("  ouro rm <issue-id>", "delete an issue — it goes"),
         ("  ouro stop <run> / retry <run> / ok <run>", ""),
         ("  ouro show <run>", "everything about one run, conversation id included"),
@@ -83,13 +85,16 @@ case "setup", "init":                 Commands.setup(args)
 case "i", "issue", "file":            Commands.issue(args)
 case "issues", "ls":                  Commands.issues(args)
 case "fix":                           Commands.fix(args)
-case "done", "resolve":               Commands.done(args)
+// `resolve` used to be an alias for `done`; it is its own verb now — the one
+// that sends an agent back to a branch that stopped merging.
+case "done":                          Commands.done(args)
 case "runs", "ps":                    Commands.runs(args)
 case "log", "logs":                   Commands.log(args)
 case "diff":                          Commands.diff(args)
 case "merge-check", "mergecheck":     Commands.mergeCheck(args)
 case "rm", "delete":                  Commands.deleteIssue(args)
-case "reply", "stop", "merge", "undo", "retry", "rebase", "ok", "drop", "ack":
+case "reply", "stop", "merge", "undo", "retry", "rebase", "resolve", "discard",
+     "ok", "drop", "ack":
                                       Commands.runAction(args.command, args)
 case "resume":                        Commands.resume(args)
 case "show":                          Commands.show(args)

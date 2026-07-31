@@ -77,6 +77,31 @@ public enum Agents {
         }
     }
 
+    /// The same conversation, reopened with something to say and nobody at the
+    /// keyboard. This is what `resolve` dispatches: the agent that wrote the
+    /// branch, handed a conflict report, supervised exactly like any other run.
+    ///
+    /// It has to be the non-interactive shape. A supervised run gets
+    /// `/dev/null` on stdin, so a harness that opens its TUI reads EOF and
+    /// hangs with an empty log — the same trap the `-p` in `defaultAgents`
+    /// exists to avoid, and it looks identical to a slow run for fifteen
+    /// minutes. `claude --resume <id>` and `codex resume <id>` are both the
+    /// interactive shapes; neither may be used here.
+    ///
+    /// Nil for a harness with no way back in. The caller must refuse the action
+    /// and say why, rather than offer a verb that quietly does nothing.
+    public static func resumeArgv(harness: Harness, template: [String]?,
+                                  sessionId: String, prompt: String) -> [String]? {
+        let executable = template?.first ?? harness.rawValue
+        switch harness {
+        case .claude: return [executable, "--resume", sessionId, "-p", prompt]
+        // `codex resume` is the TUI; `codex exec resume` is the same
+        // conversation without one.
+        case .codex:  return [executable, "exec", "resume", sessionId, prompt]
+        default:      return nil
+        }
+    }
+
     /// Claude Code's fleet view of *your own* background sessions in a repo.
     ///
     /// Deliberately scoped to the project rather than pointed at Ouroboros runs:

@@ -69,6 +69,34 @@ Five kinds of item, and nothing else — decisions only, never status:
 
 If it doesn't need a human, it isn't in there. There are no unread badges.
 
+## When a branch stops merging
+
+Every branch is tested against its base before anything calls it reviewable —
+`git merge-tree --write-tree`, no worktree, nothing to abort. A branch that no
+longer goes in reads `conflicts`, and `conflicts` offers **`ouro resolve`**.
+
+`resolve` reopens the conversation of the agent that wrote the branch and hands
+it the conflict report: which two commits stopped agreeing, which files, rebase
+onto the base and fix it. It is an ordinary supervised run — worktree, shim, log,
+gate, inbox — whose first message happens to be a conflict.
+
+It resumes rather than dispatching fresh because the agent that wrote the lines
+is the only party that knows why. Where a resolution is obvious it takes it;
+where it is not, **it stops and asks**, which lands in your inbox like any other
+question and is answered with `ouro reply`. Picking a side to make the build pass
+is not on offer. If the harness has forgotten the session, a fresh agent gets the
+same brief plus the issue, and the run says which of the two it was.
+
+It never merges anything. Ouroboros re-runs the verify command and re-tests the
+merge afterwards, so the run comes back `review` if it worked and `conflicts`
+again if it did not.
+
+A branch can also conflict because its work is *already on the base* — re-applied
+by hand, or cherry-picked in. That is **`obsolete`**, its own state, and it is
+quiet: nothing went wrong. `ouro merge-check` says which, `ouro discard` deletes
+the branch and drops the worktree, and discard refuses on any branch that still
+has something on it.
+
 ## Commands
 
 ```
@@ -81,7 +109,9 @@ ouro runs -w                           live table of every agent
 ouro log <run> -f  ·  ouro diff <run> [--json]
 ouro reply <run> "…" [-a codex]        answer a question, optionally switch harness
 ouro merge <run>  ·  ouro undo <run>  ·  ouro stop <run>  ·  ouro retry <run>
+ouro resolve <run>                     send its agent back to fix the conflicts
 ouro rebase <run>                      put its branch back on top of its base
+ouro discard <run>                     let a spent branch go
 ouro rm <issue-id> [--keep]            delete an issue; --keep only cancels it
 ouro merge-check <run>                 would this branch still go in?
 ouro inbox
@@ -107,7 +137,8 @@ so answering once is answering for good and the ⏎ path never grows a step.
 
 The drawer under it lists your projects, and lifts everything waiting on a person —
 `needs you`, `review`, `conflicts` — into a group above them. That group is the same
-set `ouro inbox` prints. When nothing is waiting it takes no room at all.
+set `ouro inbox` prints. When nothing is waiting it takes no room at all. `obsolete`
+stays out of it: letting a spent branch go is housekeeping, not a decision.
 
 The combo is `hotkey` in `~/.ouroboros/config.json` — default `opt+space`, and it has to
 carry at least one modifier. macOS gives no way to ask whether another app already owns a
@@ -232,7 +263,7 @@ truth; everything else is a cache.
 ## Development
 
 ```bash
-swift test        # 223 tests
+swift test        # 259 tests
 make build        # release binaries
 make app          # the .app bundle
 ```

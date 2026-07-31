@@ -321,6 +321,69 @@ final class SupervisedPromptTests: XCTestCase {
         XCTAssertTrue(prompt.contains("migrations/, deploy/"))
     }
 
+    // MARK: the conflict report
+
+    private var conflict: SupervisedPrompt.ConflictContext {
+        SupervisedPrompt.ConflictContext(
+            branch: "fix/login", base: "main",
+            branchSha: "bbbbbbbbbbbbbbbb", baseSha: "aaaaaaaaaaaaaaaa",
+            files: ["Sources/RowActions.swift", "Sources/Digest.swift"],
+            resultPath: "/runs/r-3/result.json", verifyCmd: "swift build")
+    }
+
+    /// What the run is actually about, in the order §2 asks for it: the branch
+    /// no longer merges, the two commits, the files.
+    func testItSaysWhatStoppedMerging() {
+        let prompt = SupervisedPrompt.resolve(conflict)
+        XCTAssertTrue(prompt.contains("`fix/login` no longer merges into `main`"))
+        XCTAssertTrue(prompt.contains("aaaaaaaaaaaa"))
+        XCTAssertTrue(prompt.contains("bbbbbbbbbbbb"))
+        XCTAssertTrue(prompt.contains("Sources/RowActions.swift"))
+        XCTAssertTrue(prompt.contains("Sources/Digest.swift"))
+        XCTAssertTrue(prompt.contains("Rebase `fix/login` onto `main`"))
+    }
+
+    /// The property the whole feature turns on. An agent that cannot tell which
+    /// side of a conflict is right has to stop and say so — and it must not be
+    /// left with the impression that picking one to get a green build is an
+    /// acceptable way out.
+    func testItSaysToAskRatherThanGuess() {
+        let prompt = SupervisedPrompt.resolve(conflict)
+        XCTAssertTrue(prompt.contains("stop and ask"))
+        XCTAssertTrue(prompt.contains("do not pick a side to make"))
+        XCTAssertTrue(prompt.contains("Stopping is a good outcome"))
+        XCTAssertTrue(prompt.contains("name the one thing you need decided"))
+        XCTAssertTrue(prompt.contains("needs-input"))
+        XCTAssertTrue(prompt.contains("/runs/r-3/result.json"))
+    }
+
+    /// The same rule as every other supervised run: it produces a branch that
+    /// merges, it never performs the merge.
+    func testItStillForbidsLandingItsOwnWork() {
+        let prompt = SupervisedPrompt.resolve(conflict)
+        XCTAssertTrue(prompt.contains("do NOT"))
+        XCTAssertTrue(prompt.contains("merge, or push anything"))
+        XCTAssertTrue(prompt.contains("you never perform the merge"))
+        XCTAssertTrue(prompt.contains("swift build"))
+    }
+
+    /// A resumed agent wrote the branch from the issue and does not need it
+    /// quoted back; a fresh one has never seen either, and is told so rather
+    /// than left to discover it.
+    func testAFreshAgentIsToldItIsReadingSomebodyElsesWork() {
+        var ctx = conflict
+        ctx.issue = "## Login button dead\n\nclicking it does nothing"
+        ctx.fresh = true
+        let fresh = SupervisedPrompt.resolve(ctx)
+        XCTAssertTrue(fresh.contains("could not be reached"))
+        XCTAssertTrue(fresh.contains("reading this work for the first time"))
+        XCTAssertTrue(fresh.contains("clicking it does nothing"))
+
+        let resumed = SupervisedPrompt.resolve(conflict)
+        XCTAssertTrue(resumed.contains("the branch you wrote earlier in this conversation"))
+        XCTAssertFalse(resumed.contains("could not be reached"))
+    }
+
     func testReplyReplaysTheOriginal() {
         let prompt = SupervisedPrompt.reply(original: "ORIGINAL-PROMPT", question: "which one?",
                                             answer: "the second", resultPath: "/runs/r-2/result.json")

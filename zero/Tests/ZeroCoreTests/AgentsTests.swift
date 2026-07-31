@@ -94,6 +94,63 @@ final class ResumeArgvTests: XCTestCase {
     }
 }
 
+/// The same conversation, reopened with something to say and nobody at the
+/// keyboard. This is what `resolve` dispatches.
+final class ResumeWithAPromptTests: XCTestCase {
+
+    func testEachHarnessCarriesThePromptItsOwnWay() {
+        XCTAssertEqual(
+            Agents.resumeArgv(harness: .claude, template: ["claude", "-p", "{prompt}"],
+                              sessionId: "s1", prompt: "your branch no longer merges"),
+            ["claude", "--resume", "s1", "-p", "your branch no longer merges"])
+        XCTAssertEqual(
+            Agents.resumeArgv(harness: .codex, template: ["codex", "exec", "{prompt}"],
+                              sessionId: "s2", prompt: "your branch no longer merges"),
+            ["codex", "exec", "resume", "s2", "your branch no longer merges"])
+    }
+
+    /// A harness with no way back in gets nil, and the caller has to refuse the
+    /// action rather than offer a verb that does nothing.
+    func testAHarnessThatCannotResumeGetsNothingToRunWith() {
+        XCTAssertNil(Agents.resumeArgv(harness: .gemini, template: ["gemini"],
+                                       sessionId: "s", prompt: "hello"))
+        XCTAssertNil(Agents.resumeArgv(harness: .other, template: ["pi"],
+                                       sessionId: "s", prompt: "hello"))
+    }
+
+    func testItUsesTheConfiguredExecutable() {
+        XCTAssertEqual(
+            Agents.resumeArgv(harness: .claude, template: ["/opt/bin/claude", "-p", "{prompt}"],
+                              sessionId: "s", prompt: "go"),
+            ["/opt/bin/claude", "--resume", "s", "-p", "go"])
+    }
+
+    /// The whole reason this variant exists. A supervised run gets /dev/null on
+    /// stdin, so a harness that opens its TUI reads EOF and hangs with an empty
+    /// log for fifteen minutes, looking exactly like a slow run. Neither
+    /// interactive shape may appear here.
+    func testNeitherShapeIsTheInteractiveOne() {
+        let claude = Agents.resumeArgv(harness: .claude, template: nil,
+                                       sessionId: "s", prompt: "go")!
+        XCTAssertTrue(claude.contains("-p"), "claude --resume without -p opens the REPL")
+        let codex = Agents.resumeArgv(harness: .codex, template: nil,
+                                      sessionId: "s", prompt: "go")!
+        XCTAssertEqual(Array(codex.prefix(3)), ["codex", "exec", "resume"],
+                       "`codex resume` alone is the TUI")
+    }
+
+    /// The prompt goes in as one argv element. It is a page of text with
+    /// newlines and backticks in it, and anything that split it would hand the
+    /// harness half a sentence and a pile of flags.
+    func testThePromptIsOneArgument() {
+        let seed = "line one\nline two `with backticks` and \"quotes\""
+        let argv = Agents.resumeArgv(harness: .claude, template: nil,
+                                     sessionId: "s", prompt: seed)!
+        XCTAssertEqual(argv.last, seed)
+        XCTAssertEqual(argv.count, 5)
+    }
+}
+
 // MARK: - asking a harness that would not be told
 
 final class CodexSessionDiscoveryTests: XCTestCase {

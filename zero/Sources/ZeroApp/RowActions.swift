@@ -144,7 +144,9 @@ enum RowActions {
         case .reply:     return "Reply"
         case .diff:      return "Diff"
         case .merge:     return "Merge"
+        case .resolve:   return "Send \(pip.agent) back to it"
         case .rebase:    return "Rebase onto its base"
+        case .discard:   return "Discard the branch"
         case .undoMerge: return "Undo the merge"
         case .markDone:  return "Mark done"
         default:         return verb.label
@@ -163,6 +165,8 @@ enum RowActions {
             case .watch:     if let runId = pip.runId { model.watchRun(runId) }
             case .reply:     if let runId = pip.runId { model.startReply(to: runId) }
             case .rebase:    if let runId = pip.runId { model.rebaseRun(runId) }
+            case .resolve:   if let runId = pip.runId { model.resolveRun(runId) }
+            case .discard:   if let runId = pip.runId { model.discardRun(runId) }
             case .stop:      if let runId = pip.runId { model.runAction("stop", runId: runId) }
             case .retry:     if let runId = pip.runId { model.runAction("retry", runId: runId) }
             case .merge:
@@ -283,6 +287,10 @@ struct WorkGlyph: View {
             // Not a milder review: the branch has been tested against its base
             // and it does not go in. Drawn as the thing standing in the way.
             case .conflicts: symbol("exclamationmark", weight: .heavy, fade: 1)
+            // Spent. The same ring as `filed` — an empty seat, because there is
+            // nothing inside the branch — but greyer, since nothing is expected
+            // of it either.
+            case .obsolete:  ring(Color.primary.opacity(0.22))
             case .merged:    symbol("checkmark", weight: .bold, fade: 0.7)
             case .failed:    symbol("xmark", weight: .heavy, fade: 1)
             case .stopped:   symbol("minus", weight: .bold, fade: 0.8)
@@ -447,7 +455,9 @@ struct IssueRow: View {
         case .reply:     return "answer \(pip.agent)"
         case .diff:      return "what it changed"
         case .merge:     return "land it"
+        case .resolve:   return "send \(pip.agent) back to sort it out"
         case .rebase:    return "put it back on top of its base"
+        case .discard:   return "its work is already on the base"
         case .undoMerge: return "revert the merge"
         case .retry:     return "run it again"
         case .stop:      return "abandon this run"
@@ -499,7 +509,9 @@ private struct VerbButton: View {
     /// is the one you most likely came for.
     private var tint: Color {
         switch verb {
-        case .fix, .retry, .reply: return ouroOrange
+        // `resolve` starts an agent, exactly as `fix` does, and it is the one
+        // verb on a conflicting row that ends the situation.
+        case .fix, .retry, .reply, .resolve: return ouroOrange
         case .merge:               return WorkState.merged.tint
         case .rebase:              return WorkState.conflicts.tint
         case .stop:                return WorkState.failed.tint

@@ -544,6 +544,19 @@ final class Daemon: @unchecked Sendable {
                 // that needs a person is not a failure to hide behind a spinner.
                 let (ok, message) = supervisor.rebase(run.id)
                 return .json(API.Message(ok: ok, message: message))
+            case "resolve":
+                // Put the agent that wrote the branch back on it, with the
+                // conflict report as its first message. Refused with the reason
+                // when there is nothing to resolve or no conversation to
+                // reopen — an action that cannot work must not be offered.
+                let (next, message) = supervisor.resolve(run.id)
+                guard let next else { return .error(message, status: 409) }
+                return .json(next, status: 201)
+            case "discard":
+                // Only ever on a branch the code has checked is spent.
+                let (ok, message) = supervisor.discard(run.id)
+                guard ok else { return .error(message, status: 409) }
+                return .json(API.Message(message: message))
             case "reply":
                 guard let body = request.decode(API.Reply.self), !body.answer.isEmpty else {
                     return .error("expected {\"answer\": \"...\"}")

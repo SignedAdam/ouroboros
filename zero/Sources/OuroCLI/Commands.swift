@@ -358,13 +358,22 @@ enum Commands {
             Out.warn("could not tell: \(error)" + pair)
             return
         }
+        // Asked before "does it merge", because a branch whose work is already
+        // on the base conflicts exactly like one whose work is not, and the two
+        // want opposite things from a person.
+        if let staleness = verdict.staleness, staleness.spent {
+            Out.warn("nothing left on \(verdict.branch)" + pair)
+            print(Ansi.dim("    " + staleness.reason))
+            print(Ansi.dim("    ouro discard \(runId)"))
+            return
+        }
         if verdict.clean {
             Out.ok("merges into \(verdict.base)" + pair)
             return
         }
         Out.warn("conflicts with \(verdict.base)" + pair)
         for path in verdict.conflicts { print(Ansi.dim("    " + path)) }
-        print(Ansi.dim("    ouro rebase \(runId)"))
+        print(Ansi.dim("    ouro resolve \(runId)   ·   ouro rebase \(runId)"))
     }
 
     static func runAction(_ action: String, _ args: Args) {
@@ -394,6 +403,16 @@ enum Commands {
                 Out.ok("retrying" + Ansi.dim("  \(run.id)"))
             case "rebase":
                 let message: API.Message = try client.post("/v1/runs/\(runId)/rebase",
+                                                           as: API.Message.self)
+                message.ok ? Out.ok(message.message) : Out.err(message.message)
+            case "resolve":
+                let run: Run = try client.post("/v1/runs/\(runId)/resolve", as: Run.self)
+                Out.ok((run.resumeMode == "fresh"
+                        ? "a fresh \(run.agent) is reading \(run.branch ?? "the branch")"
+                        : "\(run.agent) is back on \(run.branch ?? "its branch")")
+                       + Ansi.dim("  \(run.id)"))
+            case "discard":
+                let message: API.Message = try client.post("/v1/runs/\(runId)/discard",
                                                            as: API.Message.self)
                 message.ok ? Out.ok(message.message) : Out.err(message.message)
             case "ok", "drop", "ack":
@@ -435,6 +454,8 @@ enum Commands {
                 case "diff":   return "ouro diff \(id)"
                 case "merge":  return "ouro merge \(id)"
                 case "rebase": return "ouro rebase \(id)"
+                case "resolve": return "ouro resolve \(id)"
+                case "discard": return "ouro discard \(id)"
                 case "undo":   return "ouro undo \(id)"
                 case "retry":  return "ouro retry \(id)"
                 case "fix":    return "ouro accept \(id)"

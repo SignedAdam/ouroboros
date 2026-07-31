@@ -211,6 +211,16 @@ public struct Run: Codable, Sendable, Equatable, Identifiable {
     /// human, so a client can render `review` or `conflicts` without shelling
     /// out to git per row. See `MergeVerdict`.
     public var merge: MergeVerdict?
+    /// The run this one was sent in to rescue. Set only on a `resolve`.
+    public var resolveOf: String?
+    /// How a resolve run got its context: `resumed` — the original conversation
+    /// was reopened, so the agent remembers why it wrote those lines; `fresh` —
+    /// the harness had lost the session and a new agent read the branch cold.
+    ///
+    /// Recorded because the two are not worth the same. A resolution by an
+    /// agent that never saw the original reasoning is a guess made carefully,
+    /// and the person reviewing it should be able to tell.
+    public var resumeMode: String?
 
     public init(id: String, projectId: String, projectName: String, kind: RunKind,
                 agent: String, title: String, issuePath: String? = nil, cwd: String,
@@ -220,7 +230,8 @@ public struct Run: Codable, Sendable, Equatable, Identifiable {
                 exitCode: Int32? = nil, verify: VerifyOutcome? = nil,
                 result: AgentResult? = nil, note: String? = nil, mergedInto: String? = nil,
                 mergeCommit: String? = nil, acknowledged: Bool = false, prompt: String? = nil,
-                sessionId: String? = nil, merge: MergeVerdict? = nil) {
+                sessionId: String? = nil, merge: MergeVerdict? = nil,
+                resolveOf: String? = nil, resumeMode: String? = nil) {
         self.id = id
         self.projectId = projectId
         self.projectName = projectName
@@ -248,6 +259,8 @@ public struct Run: Codable, Sendable, Equatable, Identifiable {
         self.prompt = prompt
         self.sessionId = sessionId
         self.merge = merge
+        self.resolveOf = resolveOf
+        self.resumeMode = resumeMode
     }
 
     public var duration: TimeInterval? {

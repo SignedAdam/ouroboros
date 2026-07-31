@@ -46,6 +46,14 @@ public enum WorkState: String, Codable, Sendable, CaseIterable {
     /// because offering `merge` on it would be a verdict the code has checked
     /// and contradicted.
     case conflicts
+    /// Verified, does not merge, and has nothing left to give: the base already
+    /// carries this work, re-applied by hand or cherry-picked in.
+    ///
+    /// Its own state and not a flavour of `conflicts`, because the two ask
+    /// opposite things of a person. `conflicts` wants the work rescued;
+    /// `obsolete` wants the branch let go. Quiet, not a warning — nothing went
+    /// wrong here, the work arrived by another road.
+    case obsolete
     case merged
     case failed
     /// Stopped by a human.
@@ -82,6 +90,10 @@ public enum WorkState: String, Codable, Sendable, CaseIterable {
         // disagree about whether a fix actually landed.
         case .succeeded:
             if run.mergedInto != nil || run.result?.prUrl != nil { return .merged }
+            // Asked before `conflicts`, because a spent branch conflicts exactly
+            // like a live one and the wrong answer sends somebody to resolve
+            // work that is finished. See `Staleness`.
+            if let verdict = run.merge, verdict.spent { return .obsolete }
             // Only a verdict the code actually took. `error != nil` is "we could
             // not tell", and that must never render as "it will not go in".
             if let verdict = run.merge, !verdict.clean, verdict.error == nil { return .conflicts }
@@ -100,6 +112,10 @@ public enum WorkState: String, Codable, Sendable, CaseIterable {
 
     /// Waiting on a person, and on this person. What the drawer lifts to the top
     /// and what `ouro inbox` prints.
+    ///
+    /// `obsolete` is deliberately not here. Letting a spent branch go is
+    /// housekeeping, and a group that says "you need to check these" must not
+    /// fill up with things nobody needs to check.
     public var needsYou: Bool {
         self == .asking || self == .review || self == .conflicts
     }
@@ -116,7 +132,8 @@ public enum WorkState: String, Codable, Sendable, CaseIterable {
         case .failed:    return 5
         case .filed:     return 6
         case .merged:    return 7
-        case .stopped:   return 8
+        case .obsolete:  return 8
+        case .stopped:   return 9
         }
     }
 }
@@ -166,6 +183,7 @@ public struct Tally: Codable, Sendable, Equatable {
     public var asking = 0
     public var review = 0
     public var conflicts = 0
+    public var obsolete = 0
     public var merged = 0
     public var failed = 0
     public var stopped = 0
@@ -183,6 +201,7 @@ public struct Tally: Codable, Sendable, Equatable {
         asking = try c.decodeIfPresent(Int.self, forKey: .asking) ?? 0
         review = try c.decodeIfPresent(Int.self, forKey: .review) ?? 0
         conflicts = try c.decodeIfPresent(Int.self, forKey: .conflicts) ?? 0
+        obsolete = try c.decodeIfPresent(Int.self, forKey: .obsolete) ?? 0
         merged = try c.decodeIfPresent(Int.self, forKey: .merged) ?? 0
         failed = try c.decodeIfPresent(Int.self, forKey: .failed) ?? 0
         stopped = try c.decodeIfPresent(Int.self, forKey: .stopped) ?? 0
@@ -196,6 +215,7 @@ public struct Tally: Codable, Sendable, Equatable {
         case .asking:    asking += 1
         case .review:    review += 1
         case .conflicts: conflicts += 1
+        case .obsolete:  obsolete += 1
         case .merged:    merged += 1
         case .failed:    failed += 1
         case .stopped:   stopped += 1
@@ -210,6 +230,7 @@ public struct Tally: Codable, Sendable, Equatable {
         case .asking:    return asking
         case .review:    return review
         case .conflicts: return conflicts
+        case .obsolete:  return obsolete
         case .merged:    return merged
         case .failed:    return failed
         case .stopped:   return stopped
@@ -218,10 +239,10 @@ public struct Tally: Codable, Sendable, Equatable {
 
     /// Still wants something from someone. A merged fix and an abandoned run
     /// are finished with, and a backlog that counts them is a backlog that only
-    /// ever grows.
+    /// ever grows. `obsolete` is finished with too — the work is on the base.
     public var open: Int { filed + queued + running + asking + review + conflicts + failed }
 
-    public var total: Int { open + merged + stopped }
+    public var total: Int { open + merged + obsolete + stopped }
 
     /// Waiting on *you* specifically — a question, a review, a branch that no
     /// longer merges, a failure. The states worth interrupting someone for.

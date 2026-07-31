@@ -578,6 +578,41 @@ final class AppModel: ObservableObject {
         }
     }
 
+    /// Send the agent that wrote the branch back to it, with the conflict as
+    /// its first message. `POST /v1/runs/:id/resolve` and nothing else — the
+    /// panel has no idea how to resume a conversation, and must not learn.
+    func resolveRun(_ runId: String) {
+        note("sending it back…")
+        Task { [client] in
+            let next = await Task.detached {
+                try? client.post("/v1/runs/\(runId)/resolve", as: Run.self)
+            }.value
+            // The daemon refuses with the reason — nothing to resolve, no
+            // conversation to reopen — so a silent nil is the only case left.
+            guard let next else { return note("could not send that one back", bad: true) }
+            note(next.resumeMode == "fresh"
+                 ? "a fresh \(next.agent) is reading the branch"
+                 : "\(next.agent) is back on \(next.branch ?? "its branch")")
+            refresh()
+        }
+    }
+
+    /// Let a spent branch go. The daemon refuses unless it has checked there is
+    /// nothing on it, so this button cannot throw work away.
+    func discardRun(_ runId: String) {
+        note("letting it go…")
+        Task { [client] in
+            let reply = await Task.detached {
+                try? client.post("/v1/runs/\(runId)/discard", as: API.Message.self)
+            }.value
+            guard let reply, reply.ok else {
+                return note("could not discard that one", bad: true)
+            }
+            note(reply.message)
+            refresh()
+        }
+    }
+
     /// What the agent actually did, as data. Presented as a sheet on the
     /// capture panel, so escape puts the drawer back exactly as it was.
     func openDiff(_ runId: String) {
@@ -700,6 +735,9 @@ extension WorkState {
         case .asking:   return Color(red: 1.0, green: 0.74, blue: 0.18)
         case .review:   return Color(red: 0.47, green: 0.67, blue: 1.0)
         case .merged:   return Color(red: 0.49, green: 0.85, blue: 0.34)
+        // Nothing went wrong: the work arrived by another road. Grey, because a
+        // colour here would be the panel raising its voice about housekeeping.
+        case .obsolete: return .secondary
         // Tinted like the failure it is. A branch that will not go in is not a
         // milder kind of review, it is work that has to be done again.
         case .conflicts, .failed: return Color(red: 1.0, green: 0.37, blue: 0.34)
@@ -707,8 +745,9 @@ extension WorkState {
     }
 
     /// Filed is the one state that is an absence of work rather than a kind of
-    /// it, so it is the one drawn hollow.
-    var isHollow: Bool { self == .filed || self == .stopped }
+    /// it, so it is the one drawn hollow. `obsolete` joins it: the branch is
+    /// still there, but there is nothing inside it.
+    var isHollow: Bool { self == .filed || self == .stopped || self == .obsolete }
 }
 
 extension RunStatus {

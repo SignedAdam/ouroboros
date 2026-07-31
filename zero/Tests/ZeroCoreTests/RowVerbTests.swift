@@ -17,6 +17,9 @@ final class RowVerbTests: XCTestCase {
             // The diff is a sheet on this panel and `reply` writes into the
             // field you are looking at. Neither is another window.
             .diff, .reply,
+            // Letting a spent branch go is the same shape as deleting: the row
+            // changes in front of you and there is nothing else to look at.
+            .discard,
         ]
         for verb in stays {
             XCTAssertFalse(verb.handsOff, "\(verb.rawValue) should leave the panel open")
@@ -28,7 +31,9 @@ final class RowVerbTests: XCTestCase {
     func testVerbsThatOpenAWindowCloseThePanel() {
         let closes: [RowVerb] = [
             .openFile, .openFinder, .openTerminal, .openAgentView, .openWorktree,
-            .resume, .fix, .retry, .watch,
+            // `resolve` dispatches a supervised run in its own terminal, exactly
+            // as `fix` does.
+            .resume, .fix, .retry, .watch, .resolve,
         ]
         for verb in closes {
             XCTAssertTrue(verb.handsOff, "\(verb.rawValue) should close the panel behind it")
@@ -38,10 +43,10 @@ final class RowVerbTests: XCTestCase {
     /// Both lists together are the whole enum: a new verb cannot be added
     /// without landing in one of them.
     func testEveryVerbIsClassified() {
-        XCTAssertEqual(RowVerb.allCases.count, 27)
+        XCTAssertEqual(RowVerb.allCases.count, 29)
         let handsOff = RowVerb.allCases.filter(\.handsOff)
-        XCTAssertEqual(handsOff.count, 9)
-        XCTAssertEqual(RowVerb.allCases.count - handsOff.count, 18)
+        XCTAssertEqual(handsOff.count, 10)
+        XCTAssertEqual(RowVerb.allCases.count - handsOff.count, 19)
     }
 
     /// A verb without a word and a glyph is a verb nobody can put on a row.
@@ -73,8 +78,52 @@ final class WorkStateVerbTests: XCTestCase {
     /// the bug this whole state exists to close, and offering the action is the
     /// same claim as printing the word.
     func testConflictsOffersRebaseAndNeverMerge() {
-        XCTAssertEqual(WorkState.conflicts.verbs, [.diff, .rebase])
+        XCTAssertEqual(WorkState.conflicts.verbs, [.resolve, .diff, .rebase])
         XCTAssertFalse(WorkState.conflicts.verbs.contains(.merge))
+    }
+
+    /// `resolve` sits first, because it is the only verb on that row that ends
+    /// the situation. `rebase` hands the work back to a person, which is the
+    /// one outcome this product exists to avoid, so it goes last.
+    func testResolveComesFirstOnAConflictingRow() {
+        XCTAssertEqual(WorkState.conflicts.verbs.first, .resolve)
+        XCTAssertEqual(WorkState.conflicts.verbs.last, .rebase)
+    }
+
+    /// A spent branch is offered exactly two things: read what it was, and let
+    /// it go. Never `resolve` — there is nothing in it to resolve — and never
+    /// `merge`, which would produce an empty commit and a row claiming a fix
+    /// landed.
+    func testObsoleteOffersOnlyReadingAndLettingGo() {
+        XCTAssertEqual(WorkState.obsolete.verbs, [.diff, .discard])
+        XCTAssertFalse(WorkState.obsolete.verbs.contains(.merge))
+        XCTAssertFalse(WorkState.obsolete.verbs.contains(.resolve))
+        XCTAssertFalse(WorkState.obsolete.verbs.contains(.rebase))
+    }
+
+    /// And `discard` is offered nowhere else. It deletes a branch, and the only
+    /// state that has checked there is nothing on that branch is `obsolete`.
+    func testOnlyObsoleteOffersDiscard() {
+        for state in WorkState.allCases where state != .obsolete {
+            XCTAssertFalse(state.verbs.contains(.discard),
+                           "\(state.rawValue) should not offer discard")
+        }
+    }
+
+    /// Nothing but a conflict gets an agent sent back to it.
+    func testOnlyConflictsOffersResolve() {
+        for state in WorkState.allCases where state != .conflicts {
+            XCTAssertFalse(state.verbs.contains(.resolve),
+                           "\(state.rawValue) should not offer resolve")
+        }
+    }
+
+    /// Housekeeping is not a decision. `obsolete` must stay out of the group at
+    /// the top of the drawer, or a group that means "you need to check these"
+    /// fills up with things nobody needs to check.
+    func testObsoleteDoesNotWaitOnYou() {
+        XCTAssertFalse(WorkState.obsolete.needsYou)
+        XCTAssertFalse(WorkState.obsolete.isLive)
     }
 
     /// Only the state that actually merges gets the merge.
@@ -109,9 +158,11 @@ final class WorkStateVerbTests: XCTestCase {
     /// moment to appear, and a panel that vanishes onto an unchanged screen
     /// reads as a click that did nothing.
     func testOnlyDispatchGetsABeatBeforeClosing() {
-        XCTAssertEqual(RowVerb.fix.beat, 0.5)
-        XCTAssertEqual(RowVerb.retry.beat, 0.5)
-        for verb in RowVerb.allCases where verb != .fix && verb != .retry {
+        let dispatches: Set<RowVerb> = [.fix, .retry, .resolve]
+        for verb in dispatches {
+            XCTAssertEqual(verb.beat, 0.5, "\(verb.rawValue) starts an agent")
+        }
+        for verb in RowVerb.allCases where !dispatches.contains(verb) {
             XCTAssertEqual(verb.beat, 0, "\(verb.rawValue) should close immediately")
         }
     }
