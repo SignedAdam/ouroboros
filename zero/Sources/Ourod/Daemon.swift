@@ -532,7 +532,13 @@ final class Daemon: @unchecked Sendable {
                 supervisor.acknowledge(run.id)
                 return .json(API.Message(message: "acknowledged"))
             case "merge":
-                guard let merged = supervisor.mergeNow(run.id) else { return .error("could not merge") }
+                // A refused merge is a 409 carrying the reason, the same as
+                // `resolve`. Returning the unchanged run with a 200 made a
+                // refusal look exactly like a success to every caller that was
+                // not the inbox.
+                let (merged, refused) = supervisor.mergeNow(run.id)
+                guard let merged else { return .error(refused ?? "could not merge") }
+                if let refused { return .error(refused, status: 409) }
                 return .json(merged)
             case "undo":
                 let (updated, message) = supervisor.undo(run.id)

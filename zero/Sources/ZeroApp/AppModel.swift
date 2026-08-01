@@ -370,28 +370,49 @@ final class AppModel: ObservableObject {
         deleteIssue(issue.id)
     }
 
+    /// Every verb here can be refused, and the daemon always says why — a merge
+    /// onto a dirty tree, a reply to a run that already finished. That sentence
+    /// used to die in a `try?`: the button showed "merging", the row stayed put,
+    /// and the one thing that would have explained it was thrown away.
     func runAction(_ action: String, runId: String, answer: String? = nil) {
         busy = true
         Task.detached { [client] in
-            switch action {
-            case "reply":
-                _ = try? client.post("/v1/runs/\(runId)/reply",
-                                     API.Reply(answer: answer ?? ""), as: Run.self)
-            case "merge":
-                _ = try? client.post("/v1/runs/\(runId)/merge", as: Run.self)
-            case "undo":
-                _ = try? client.post("/v1/runs/\(runId)/undo", as: API.Message.self)
-            case "retry":
-                _ = try? client.post("/v1/runs/\(runId)/retry", as: Run.self)
-            case "stop":
-                _ = try? client.post("/v1/runs/\(runId)/stop", as: Run.self)
-            default:
-                _ = try? client.post("/v1/runs/\(runId)/ack", as: API.Message.self)
+            var refused: String?
+            do {
+                switch action {
+                case "reply":
+                    _ = try client.post("/v1/runs/\(runId)/reply",
+                                        API.Reply(answer: answer ?? ""), as: Run.self)
+                case "merge":
+                    _ = try client.post("/v1/runs/\(runId)/merge", as: Run.self)
+                case "undo":
+                    _ = try client.post("/v1/runs/\(runId)/undo", as: API.Message.self)
+                case "retry":
+                    _ = try client.post("/v1/runs/\(runId)/retry", as: Run.self)
+                case "stop":
+                    _ = try client.post("/v1/runs/\(runId)/stop", as: Run.self)
+                default:
+                    _ = try client.post("/v1/runs/\(runId)/ack", as: API.Message.self)
+                }
+            } catch {
+                refused = AppModel.refusal(error)
             }
             await MainActor.run { [weak self] in
                 self?.busy = false
+                if let refused { self?.note(refused, bad: true) }
                 self?.refresh()
             }
+        }
+    }
+
+    /// The daemon's own sentence, not the transport's. `HTTP 409:` in front of
+    /// it tells you nothing you can act on, and the panel has one line.
+    nonisolated static func refusal(_ error: Error) -> String {
+        guard let client = error as? ZeroClient.ClientError else { return "\(error)" }
+        switch client {
+        case .http(_, let message): return message
+        case .daemonDown:           return "daemon is not running"
+        case .transport, .decode:   return client.description
         }
     }
 

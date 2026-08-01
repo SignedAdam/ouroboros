@@ -605,14 +605,32 @@ public final class Supervisor: @unchecked Sendable {
 
     // MARK: - Manual actions
 
-    /// Merge a run that was left on its branch (the inbox's "ready" action).
+    /// Merge a run that was left on its branch, or say why not.
+    ///
+    /// `performMerge` reports a refusal by leaving `mergedInto` nil and writing
+    /// the reason onto the run. That is enough for the inbox, which re-reads the
+    /// run, and useless to a caller: a refused merge and a completed one both
+    /// came back as a `Run`, so the panel said "merging…" and then nothing at
+    /// all. The reason travels with the answer now.
     @discardableResult
-    public func mergeNow(_ id: String) -> Run? {
-        guard let run = runs.get(id), let project = registry.find(run.projectId) else { return nil }
-        guard run.status == .succeeded, run.mergedInto == nil else { return run }
+    public func mergeNow(_ id: String) -> (Run?, String?) {
+        guard let run = runs.get(id), let project = registry.find(run.projectId) else {
+            return (nil, "no such run")
+        }
+        guard run.status == .succeeded else {
+            return (run, "this run is \(run.status.rawValue), and only a verified run can be merged")
+        }
+        if let already = run.mergedInto { return (run, "already merged into \(already)") }
         runs.mutate(id) { $0.acknowledged = false }
         performMerge(run, project: project)
-        return runs.get(id)
+
+        guard let after = runs.get(id) else { return (nil, "the run went away mid-merge") }
+        // The same test the inbox and the drawer use for "this landed", so the
+        // three cannot disagree about whether a merge happened.
+        if after.mergedInto == nil, after.result?.prUrl == nil {
+            return (after, after.note ?? "the merge did not happen")
+        }
+        return (after, nil)
     }
 
     /// Revert the merge commit. Undo is what makes autonomy comfortable.
