@@ -2,118 +2,73 @@
 """Synthesises the toast sound Ouroboros plays when a run lands.
 
 The brief was Jared Leto's ringtone in Blade Runner 2049 (he plays Wallace): a
-chirpy pulse, twice. So it is two short chirps, not a chime and not a drone.
-Each one sweeps upward about a fifth in 130ms, which is what makes it read as
-a chirp rather than a beep, over a quiet low body that gives it weight on a
-laptop speaker. The second chirp sits slightly higher than the first, so the
-pair lifts and then answers itself instead of just repeating.
+chirpy pulse, twice, inside about a second. So it is two short chirps, not a
+chime and not a drone. Each chirp sweeps in pitch over a few tens of
+milliseconds, which is what makes it read as a chirp rather than a beep, over an
+optional low partial that gives it body on a laptop speaker.
 
-    make-toast-sound out.wav
+Every character decision is a flag, because the difference between a good one
+and a bad one is entirely taste and the only way to choose is to hear them side
+by side. See `audition-toast-sound` for that.
 
-Rendered rather than recorded so it ships in the repo as a readable file you can
-retune, instead of a binary nobody can adjust.
+    make-toast-sound out.wav                       # the current chosen sound
+    make-toast-sound out.wav --gap 0.18 --sweep 0.6 --base 1200
 
-Taste conversation so far (round 1 -> round 2):
-  tight  (gap 0.23s, dur 0.72s) — the two chirps almost on top of each other.
-         verdict: "super interesting, felt close, in many ways, but not quite."
-         Kept permanently as a reference point.
-  spaced (gap 0.48s, dur 1.05s) — shipped as the first landed.wav. verdict: "the
-         second chirp was slow for some reason? or had a pause." I.e. the gap
-         itself, plus how the second hit is voiced, reads as a stumble rather
-         than a pulse. Kept permanently as a reference point (and as the thing
-         round 2 is trying to fix).
-  Round 2 diagnosis: 0.48s is long enough to read as a pause rather than a
-  pulse pair; the second chirp is also quieter (gain 0.78) and its transient
-  decays at the same slow-ish rate as the first, so it can feel like it is
-  dragging rather than snapping. Round 2 fixes the gap to 0.30s (between
-  tight's 0.23 and spaced's 0.48, matching the verdict on what felt right)
-  and then, holding that gap fixed, isolates candidate fixes for the second
-  chirp one at a time: raise its level, tighten its decay, or thin its low
-  body — because any of those could be why it reads as "slow".
+Rendered rather than recorded so it lives in the repo as a file you can retune,
+instead of a binary nobody can adjust.
 """
+import argparse
 import math
 import struct
-import sys
 import wave
 
 RATE = 48_000
 
-# Chirp tuples are (start_seconds, base_hz, sweep_multiple, gain) or, to tune
-# a single chirp's texture independently, (start, base, sweep, gain, decay,
-# body_scale). decay is the exponential tail rate applied to the transient
-# (default 26.0 — higher = snappier, lower = more drawn out); it also scales
-# the low body partial's own decay by the same ratio, so a faster decay
-# shortens the whole hit, not just the top. body_scale multiplies how much of
-# the quiet low partial rides under that chirp (default 1.0; 0 removes it).
-VARIANTS = {
-    "tight":  {"dur": 0.72, "chirps": [(0.000, 880.0, 1.5, 1.00),
-                                       (0.230, 988.0, 1.5, 0.78)]},
-    "spaced": {"dur": 1.05, "chirps": [(0.040, 880.0, 1.5, 1.00),
-                                       (0.520, 988.0, 1.5, 0.78)]},
-    # Round 2: gap fixed at 0.30s (start2 - start1) for all five below, so the
-    # only thing that changes between them is how the second chirp is voiced.
-    # "gap30" is the control: same second-chirp texture as spaced, just closer.
-    "gap30":       {"dur": 0.85, "chirps": [(0.020, 880.0, 1.5, 1.00),
-                                            (0.320, 988.0, 1.5, 0.78)]},
-    # gain only: bring the second chirp up almost to the first chirp's level.
-    "gap30-gain":  {"dur": 0.85, "chirps": [(0.020, 880.0, 1.5, 1.00),
-                                            (0.320, 988.0, 1.5, 0.95)]},
-    # decay only: snap the second chirp's tail shut faster so it can't drag.
-    "gap30-decay": {"dur": 0.85, "chirps": [(0.020, 880.0, 1.5, 1.00),
-                                            (0.320, 988.0, 1.5, 0.78, 36.0, 1.0)]},
-    # body only: thin the low partial under the second chirp so it can't smear
-    # into the gap behind it.
-    "gap30-body":  {"dur": 0.85, "chirps": [(0.020, 880.0, 1.5, 1.00),
-                                            (0.320, 988.0, 1.5, 0.78, 26.0, 0.4)]},
-    # synthesis: best guess combining the three fixes above.
-    "gap30-punch": {"dur": 0.85, "chirps": [(0.020, 880.0, 1.5, 1.00),
-                                            (0.320, 988.0, 1.5, 0.92, 34.0, 0.5)]},
-}
-VARIANT = "spaced"
-DUR = VARIANTS[VARIANT]["dur"]
-CHIRPS = VARIANTS[VARIANT]["chirps"]
-CHIRP_LEN = 0.13
+# The chosen sound. Everything here is overridable from the command line; these
+# are simply the values that won the audition.
+DEFAULTS = dict(
+    base=880.0,      # Hz of the first chirp
+    interval=1.122,  # second chirp relative to the first (a whole tone up)
+    gap=0.230,       # seconds between the two chirp onsets
+    sweep=1.5,       # end/start pitch ratio. >1 rises, <1 falls, 1.0 is flat
+    glide=0.130,     # seconds the sweep takes
+    decay=26.0,      # tail rate — higher is snappier
+    body=0.30,       # gain of the low partial under each chirp, 0 for none
+    shimmer=0.22,    # second-harmonic gain — brightness
+    second=0.78,     # gain of the second chirp relative to the first
+)
 
 
-def _norm(c):
-    """Pad a 4-tuple chirp with the default decay/body_scale."""
-    if len(c) == 4:
-        start, base, sweep, gain = c
-        return (start, base, sweep, gain, 26.0, 1.0)
-    if len(c) == 6:
-        return c
-    raise ValueError(f"chirp tuple must have 4 or 6 elements, got {len(c)}: {c}")
-
-
-def chirp(t, base, sweep, gain, decay=26.0):
-    """One upward sweep with a soft attack and a quick tail."""
-    if t < 0 or t > CHIRP_LEN * 3:
+def chirp(t, base, gain, p):
+    """One pitch sweep with a fast attack and an exponential tail."""
+    if t < 0 or t > 1.0:
         return 0.0
-    # Phase of a linear frequency sweep is the integral of f(t).
-    k = (base * (sweep - 1.0)) / CHIRP_LEN
-    phase = 2 * math.pi * (base * t + 0.5 * k * min(t, CHIRP_LEN) ** 2)
-    body = math.sin(phase) + 0.22 * math.sin(2 * phase) + 0.07 * math.sin(3 * phase)
+    # Phase of a linear frequency sweep is the integral of f(t), and the sweep
+    # stops at `glide` so the tail holds a steady pitch instead of running away.
+    k = (base * (p.sweep - 1.0)) / p.glide
+    swept = min(t, p.glide)
+    phase = 2 * math.pi * (base * t + 0.5 * k * swept ** 2)
+    tone = (math.sin(phase)
+            + p.shimmer * math.sin(2 * phase)
+            + p.shimmer * 0.3 * math.sin(3 * phase))
     attack = min(1.0, t / 0.006)          # fast, but never a click
-    tail = math.exp(-t * decay)
-    return body * attack * tail * gain
+    return tone * attack * math.exp(-t * p.decay) * gain
 
 
-def render():
-    chirps = [_norm(c) for c in CHIRPS]
-    frames = int(RATE * DUR)
+def render(p):
+    voices = [(0.0, p.base, 1.0), (p.gap, p.base * p.interval, p.second)]
+    dur = p.gap + 0.55
     out = []
-    for i in range(frames):
+    for i in range(int(RATE * dur)):
         t = i / RATE
-        sample = sum(chirp(t - start, base, sweep, gain, decay)
-                     for start, base, sweep, gain, decay, _body in chirps)
-        # A quiet low partial under each chirp so it has body rather than
-        # sounding like a smoke alarm. Its decay rate scales with the
-        # chirp's own decay, so a "snappier" chirp gets a snappier body too.
-        for start, _, _, gain, decay, body_scale in chirps:
-            dt = t - start
-            if 0 <= dt < 0.5:
-                body_rate = 9.0 * (decay / 26.0)
-                sample += 0.30 * gain * body_scale * math.sin(2 * math.pi * 146.8 * dt) * math.exp(-dt * body_rate)
+        sample = sum(chirp(t - start, base, gain, p) for start, base, gain in voices)
+        if p.body:
+            for start, _, gain in voices:
+                dt = t - start
+                if 0 <= dt < 0.5:
+                    sample += (p.body * gain
+                               * math.sin(2 * math.pi * 146.8 * dt)
+                               * math.exp(-dt * 9.0))
         out.append(math.tanh(sample * 0.9) * 0.8)
 
     peak = max(abs(s) for s in out) or 1.0
@@ -129,15 +84,16 @@ def write(path, samples):
             struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767)) for s in samples))
 
 
+def parser():
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("output", nargs="?", default="toast.wav")
+    for name, value in DEFAULTS.items():
+        ap.add_argument(f"--{name}", type=float, default=value)
+    return ap
+
+
 if __name__ == "__main__":
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    for a in sys.argv[1:]:
-        if a.startswith("--variant="):
-            VARIANT = a.split("=", 1)[1]
-            if VARIANT not in VARIANTS:
-                sys.exit(f"unknown variant {VARIANT}; have: {', '.join(VARIANTS)}")
-            DUR = VARIANTS[VARIANT]["dur"]
-            CHIRPS = VARIANTS[VARIANT]["chirps"]
-    target = args[0] if args else "toast.wav"
-    write(target, render())
-    print(target)
+    args = parser().parse_args()
+    write(args.output, render(args))
+    print(args.output)

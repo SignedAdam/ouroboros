@@ -1,0 +1,87 @@
+#!/opt/homebrew/bin/python3.11
+"""Plays a spread of candidate toast sounds so you can pick one by number.
+
+Choosing this sound by describing it costs a round trip per guess. This renders
+the whole spread at once and plays them in order with their numbers, so one
+listening pass replaces ten of those.
+
+    audition-toast-sound              # play the spread, announcing each number
+    audition-toast-sound --only 4     # replay one candidate
+    audition-toast-sound --loop 4     # replay one candidate three times
+
+Candidates land in Resources/reference/ so the ones worth keeping stay kept.
+"""
+import argparse
+import os
+import subprocess
+import sys
+import time
+import types
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+_src = open(os.path.join(HERE, "make-toast-sound")).read().split('if __name__')[0]
+mts = types.ModuleType("mts")
+exec(compile(_src, "make-toast-sound", "exec"), mts.__dict__)
+
+OUT = os.path.join(HERE, "..", "Sources", "ZeroApp", "Resources", "reference")
+
+# Chosen to span the axes that actually change how it reads, rather than to
+# crowd around one idea. Direction of the sweep first, because a falling chirp
+# and a rising one are different sounds, not different settings.
+CANDIDATES = [
+    ("rise-tight",   "rising, chirps close together (the current one)", {}),
+    ("fall-tight",   "falling — blip rather than bird",                 dict(sweep=0.62)),
+    ("flat-tight",   "no sweep at all, pure double beep",               dict(sweep=1.0)),
+    ("rise-wide",    "rising, a half second apart",                     dict(gap=0.48)),
+    ("fall-wide",    "falling, a half second apart",                    dict(sweep=0.62, gap=0.48)),
+    ("high-fall",    "falling, an octave up — closer to a phone",       dict(sweep=0.62, base=1480.0)),
+    ("high-rise",    "rising, an octave up",                            dict(base=1480.0)),
+    ("deep-fall",    "falling, low and round",                          dict(sweep=0.62, base=520.0, body=0.42)),
+    ("dry-fall",     "falling, no low body, very clean",                dict(sweep=0.62, body=0.0, shimmer=0.10)),
+    ("snap-fall",    "falling, very short decay — a tick",              dict(sweep=0.62, decay=44.0, gap=0.17)),
+    ("slow-glide",   "rising, a long lazy glide",                       dict(glide=0.30, decay=14.0)),
+    ("unison",       "both chirps at the same pitch",                   dict(interval=1.0, sweep=0.62)),
+]
+
+
+def build(name, overrides):
+    values = dict(mts.DEFAULTS)
+    values.update(overrides)
+    path = os.path.join(OUT, f"toast-{name}.wav")
+    mts.write(path, mts.render(types.SimpleNamespace(**values)))
+    return path
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--only", type=int, help="play just this candidate")
+    ap.add_argument("--loop", type=int, help="play this candidate three times")
+    args = ap.parse_args()
+
+    os.makedirs(OUT, exist_ok=True)
+    built = [(i + 1, name, note, build(name, over))
+             for i, (name, note, over) in enumerate(CANDIDATES)]
+
+    pick = args.only or args.loop
+    if pick:
+        chosen = [row for row in built if row[0] == pick]
+        if not chosen:
+            sys.exit(f"no candidate {pick} — there are {len(built)}")
+        for _ in range(3 if args.loop else 1):
+            n, name, note, path = chosen[0]
+            print(f"  {n:>2}. {name:<12} {note}")
+            subprocess.run(["afplay", path])
+            time.sleep(0.4)
+        return
+
+    print(f"\n  {len(built)} candidates. Say the number that is closest.\n")
+    for n, name, note, path in built:
+        print(f"  {n:>2}. {name:<12} {note}", flush=True)
+        subprocess.run(["afplay", path])
+        time.sleep(0.55)
+    print(f"\n  replay one:  audition-toast-sound --loop <n>\n")
+
+
+if __name__ == "__main__":
+    main()
