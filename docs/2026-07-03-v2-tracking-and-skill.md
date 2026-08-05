@@ -28,7 +28,7 @@ created: 2026-07-03T02:55:12Z
 body markdown…
 ```
 
-- **Status = folder**, matching the existing convention (Lantern + Atlas):
+- **Status = folder**, matching the existing convention:
   `.issues/new/`, `.issues/planned/`, `.issues/done/`, `.issues/cancelled/`.
   New issues are written to `new/`. Changing status moves the file.
 - **Frontmatter** carries `title` and `created` (ISO-8601 UTC). Parsers MUST tolerate

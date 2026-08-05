@@ -125,9 +125,9 @@ an app with established components builds its own composer against the engine
 
 ### Python — port exists in spirit
 
-A reference implementation ships in Lantern (`lantern/ouroboros/`: `issue.py`, `store.py`,
-`agent.py`, `terminal.py`, `facade.py` + tests). If `$OURO/python/` has the port, use it;
-otherwise port from `$OURO/swift/` (below) — the units map 1:1.
+The units are `issue.py`, `store.py`, `agent.py`, `terminal.py`, `facade.py` + tests.
+If `$OURO/python/` has the port, use it; otherwise port from `$OURO/swift/` (below) —
+the units map 1:1.
 
 ### Any other language — port the pattern
 

@@ -44,7 +44,7 @@ final class RegistryTests: XCTestCase {
         let registry = Registry(file: file)
         registry.upsert(Project(id: "atlas", name: "Atlas", path: "/tmp/a"))
         registry.upsert(Project(id: "lantern", name: "Lantern", path: "/tmp/b"))
-        XCTAssertEqual(registry.find("mond")?.id, "atlas")
+        XCTAssertEqual(registry.find("atl")?.id, "atlas")
         XCTAssertEqual(registry.find("ATLAS")?.id, "atlas")
         XCTAssertNil(registry.find("nope"))
     }

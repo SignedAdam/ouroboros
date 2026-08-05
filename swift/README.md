@@ -5,7 +5,7 @@ as a markdown file, and (optionally) hand it straight to a coding agent (Claude 
 Codex, …) running in an isolated git worktree in a new terminal tab. It feels magical:
 file ten issues, fire ten agents, walk away.
 
-This is the Swift port of the engine that powers the issue-fixer in Lantern. It is a pure,
+This is the Swift engine behind the issue-fixer, in production. It is a pure,
 UI-free package — drop it into any macOS Swift app and build whatever UI you like on top
 (or use the included default `OuroborosUI`).
 
