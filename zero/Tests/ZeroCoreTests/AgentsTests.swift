@@ -9,8 +9,6 @@ private func scratchDir(_ name: String) -> String {
     return path
 }
 
-// MARK: - which harness is this
-
 final class HarnessDetectionTests: XCTestCase {
     func testRecognisesTheUsualSuspects() {
         XCTAssertEqual(Harness.of(agent: "claude", template: ["claude", "-p", "{prompt}"]), .claude)
@@ -18,7 +16,6 @@ final class HarnessDetectionTests: XCTestCase {
         XCTAssertEqual(Harness.of(agent: "gemini", template: ["gemini", "-p", "{prompt}"]), .gemini)
     }
 
-    /// The executable is the truth, not the key someone filed it under.
     func testAnAbsolutePathIsStillTheSameHarness() {
         XCTAssertEqual(
             Harness.of(agent: "my-agent", template: ["/opt/homebrew/bin/claude", "{prompt}"]),
@@ -34,8 +31,6 @@ final class HarnessDetectionTests: XCTestCase {
     }
 }
 
-// MARK: - telling a harness which conversation this is
-
 final class DispatchArgvTests: XCTestCase {
     func testClaudeIsToldItsSessionId() {
         let argv = Agents.dispatchArgv(template: ["claude", "-p", "{prompt}"],
@@ -44,8 +39,6 @@ final class DispatchArgvTests: XCTestCase {
         XCTAssertEqual(argv, ["claude", "--session-id", "abc-123", "-p", "fix the button"])
     }
 
-    /// Codex will not be told, so nothing is injected and the argv is exactly
-    /// what the user configured.
     func testCodexIsLeftAlone() {
         let argv = Agents.dispatchArgv(template: ["codex", "exec", "{prompt}"],
                                        prompt: "fix the button", sessionId: "abc-123",
@@ -53,8 +46,6 @@ final class DispatchArgvTests: XCTestCase {
         XCTAssertEqual(argv, ["codex", "exec", "fix the button"])
     }
 
-    /// A hand-written template is law: `{session}` says where the id goes, and
-    /// nothing else is added around it.
     func testAnExplicitPlaceholderWins() {
         let argv = Agents.dispatchArgv(
             template: ["claude", "--session-id={session}", "-p", "{prompt}"],
@@ -94,10 +85,7 @@ final class ResumeArgvTests: XCTestCase {
     }
 }
 
-/// The same conversation, reopened with something to say and nobody at the
-/// keyboard. This is what `resolve` dispatches.
 final class ResumeWithAPromptTests: XCTestCase {
-
     func testEachHarnessCarriesThePromptItsOwnWay() {
         XCTAssertEqual(
             Agents.resumeArgv(harness: .claude, template: ["claude", "-p", "{prompt}"],
@@ -109,8 +97,6 @@ final class ResumeWithAPromptTests: XCTestCase {
             ["codex", "exec", "resume", "s2", "your branch no longer merges"])
     }
 
-    /// A harness with no way back in gets nil, and the caller has to refuse the
-    /// action rather than offer a verb that does nothing.
     func testAHarnessThatCannotResumeGetsNothingToRunWith() {
         XCTAssertNil(Agents.resumeArgv(harness: .gemini, template: ["gemini"],
                                        sessionId: "s", prompt: "hello"))
@@ -125,10 +111,6 @@ final class ResumeWithAPromptTests: XCTestCase {
             ["/opt/bin/claude", "--resume", "s", "-p", "go"])
     }
 
-    /// The whole reason this variant exists. A supervised run gets /dev/null on
-    /// stdin, so a harness that opens its TUI reads EOF and hangs with an empty
-    /// log for fifteen minutes, looking exactly like a slow run. Neither
-    /// interactive shape may appear here.
     func testNeitherShapeIsTheInteractiveOne() {
         let claude = Agents.resumeArgv(harness: .claude, template: nil,
                                        sessionId: "s", prompt: "go")!
@@ -139,9 +121,6 @@ final class ResumeWithAPromptTests: XCTestCase {
                        "`codex resume` alone is the TUI")
     }
 
-    /// The prompt goes in as one argv element. It is a page of text with
-    /// newlines and backticks in it, and anything that split it would hand the
-    /// harness half a sentence and a pile of flags.
     func testThePromptIsOneArgument() {
         let seed = "line one\nline two `with backticks` and \"quotes\""
         let argv = Agents.resumeArgv(harness: .claude, template: nil,
@@ -150,8 +129,6 @@ final class ResumeWithAPromptTests: XCTestCase {
         XCTAssertEqual(argv.count, 5)
     }
 }
-
-// MARK: - asking a harness that would not be told
 
 final class CodexSessionDiscoveryTests: XCTestCase {
     private func rollout(in root: String, id: String, cwd: String, day: String = "2026/07/29") {
@@ -176,7 +153,6 @@ final class CodexSessionDiscoveryTests: XCTestCase {
         XCTAssertEqual(found, "bbbb-2222")
     }
 
-    /// A conversation from before this run started is somebody else's.
     func testIgnoresRolloutsOlderThanTheRun() {
         let root = scratchDir("codex-old")
         rollout(in: root, id: "cccc-3333", cwd: "/Users/a/dev/atlas")
@@ -202,15 +178,11 @@ final class CodexSessionDiscoveryTests: XCTestCase {
     }
 }
 
-// MARK: - curation
-
 final class ProjectCurationTests: XCTestCase {
     private func registry(_ name: String) -> Registry {
         Registry(file: (scratchDir(name) as NSString).appendingPathComponent("projects.json"))
     }
 
-    /// The whole promise of "hide until it is active again": Ouroboros being
-    /// used here brings it back, and nothing else does.
     func testUsingAProjectUnhidesIt() {
         let reg = registry("hide")
         var project = Project(id: "p", name: "p", path: "/tmp/p")
@@ -223,8 +195,6 @@ final class ProjectCurationTests: XCTestCase {
         XCTAssertNotNil(reg.find("p")?.lastUsed)
     }
 
-    /// The registry outlives the app, so the flags have to survive a reload —
-    /// and a registry written before these fields existed has to still load.
     func testFlagsSurviveAReloadAndOldFilesStillDecode() throws {
         let file = (scratchDir("persist") as NSString).appendingPathComponent("projects.json")
         let reg = Registry(file: file)
@@ -234,7 +204,6 @@ final class ProjectCurationTests: XCTestCase {
 
         XCTAssertTrue(Registry(file: file).find("p")?.favourite ?? false)
 
-        // A registry from before favourites existed.
         try """
         [{"id":"old","name":"old","path":"/tmp/old","policy":{"autonomy":"manual",\
         "maxParallel":2,"worktreeDefault":true,"finishDefault":"merge","protectedPaths":[]},\

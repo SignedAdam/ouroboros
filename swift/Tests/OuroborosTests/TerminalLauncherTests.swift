@@ -4,7 +4,6 @@ import XCTest
 final class TerminalLauncherTests: XCTestCase {
     private let inv = AgentInvocation(argv: ["claude", "do it"], cwd: "/repo/wt", label: "fix-x")
 
-    // A capture fake that answers tmux queries about the dedicated session.
     private func fakeCapture(sessions: [String], clients: [String]) -> @Sendable ([String]) -> String {
         { argv in
             if argv.contains("list-sessions") { return sessions.joined(separator: "\n") }
@@ -13,8 +12,6 @@ final class TerminalLauncherTests: XCTestCase {
         }
     }
 
-    // Agents NEVER touch the user's own tmux session: even with a user session
-    // present, the fix goes into the dedicated "ouroboros" session as a new tab.
     func testGhosttyTmuxTabAddsWindowToDedicatedSessionNotTheUsers() {
         final class Box: @unchecked Sendable { var runs: [[String]] = [] }
         let box = Box()
@@ -24,7 +21,7 @@ final class TerminalLauncherTests: XCTestCase {
             capture: fakeCapture(sessions: ["main", "ouroboros"], clients: ["/dev/ttys001"]),
             writeScript: { _ in "/tmp/launch.command" })
         launcher.launch(inv)
-        XCTAssertEqual(box.runs.count, 1)                    // attached → no Ghostty open
+        XCTAssertEqual(box.runs.count, 1)
         let first = box.runs[0]
         XCTAssertEqual(first.prefix(3), ["tmux", "new-window", "-t"])
         XCTAssertTrue(first.contains("ouroboros"))
@@ -33,7 +30,6 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertTrue(first.contains("fix-x"))
     }
 
-    // Session exists but nobody is watching it → also open a Ghostty window attached to it.
     func testGhosttyTmuxTabAttachesGhosttyWhenUnwatched() {
         final class Box: @unchecked Sendable { var runs: [[String]] = [] }
         let box = Box()
@@ -49,14 +45,13 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertTrue(box.runs[1].contains("ouroboros"))
     }
 
-    // No dedicated session yet → create it detached (named window) + attach Ghostty.
     func testGhosttyTmuxTabCreatesDedicatedSessionOnFirstFix() {
         final class Box: @unchecked Sendable { var runs: [[String]] = [] }
         let box = Box()
         let launcher = TerminalLauncher(
             kind: .ghosttyTmuxTab,
             run: { box.runs.append($0) },
-            capture: fakeCapture(sessions: ["main"], clients: []),   // user session only
+            capture: fakeCapture(sessions: ["main"], clients: []),
             writeScript: { _ in "/tmp/launch.command" })
         launcher.launch(inv)
         let first = box.runs[0]
@@ -68,7 +63,6 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertTrue(box.runs[1].contains("attach"))
     }
 
-    // The dedicated session name is configurable.
     func testCustomSessionName() {
         final class Box: @unchecked Sendable { var runs: [[String]] = [] }
         let box = Box()
@@ -81,9 +75,6 @@ final class TerminalLauncherTests: XCTestCase {
         XCTAssertTrue(box.runs[0].contains("fixers"))
     }
 
-    // Cinema mode: one Ghostty window running the generated splash+agent script.
-    // Launched via the Ghostty BINARY, never `open -na` — `open` adds the new
-    // instance's default window (the user's shell/session picker) as a second tab.
     func testCinemaLaunchesGhosttyBinaryDirectlyWithGeneratedScript() throws {
         final class Box: @unchecked Sendable { var runs: [[String]] = [] }
         let box = Box()
@@ -94,7 +85,7 @@ final class TerminalLauncherTests: XCTestCase {
         launcher.launch(inv)
         XCTAssertEqual(box.runs.count, 1)
         let argv = box.runs[0]
-        XCTAssertEqual(argv.first, "/opt/homebrew/bin/ghostty")   // PATH-resolved binary
+        XCTAssertEqual(argv.first, "/opt/homebrew/bin/ghostty")
         XCTAssertFalse(argv.contains("open"))
         XCTAssertTrue(argv.contains("--window-width=110"))
         XCTAssertTrue(argv.contains("--window-height=32"))
@@ -108,7 +99,6 @@ final class TerminalLauncherTests: XCTestCase {
         try? FileManager.default.removeItem(atPath: script)
     }
 
-    // No `ghostty` on PATH → fall back to the app bundle's binary.
     func testGhosttyBinaryFallsBackToAppBundle() {
         let launcher = TerminalLauncher(kind: .ghosttyCinemaWindow, run: { _ in },
                                         capture: { _ in "" })
@@ -116,22 +106,18 @@ final class TerminalLauncherTests: XCTestCase {
                        "/Applications/Ghostty.app/Contents/MacOS/ghostty")
     }
 
-    // The splash script: banner + title, then exec the agent in place (so the
-    // window closes when the agent exits). Never touches tmux or the user's rc.
     func testCinemaScriptContent() {
         let titled = AgentInvocation(argv: ["claude", "the prompt"], cwd: "/repo/wt",
                                      label: "fix-x", title: "Fix the $HOME 'login'")
         let s = TerminalLauncher.cinemaScript(titled)
         XCTAssertTrue(s.contains("fixing your issue"))
-        XCTAssertTrue(s.contains(shquote("Fix the $HOME 'login'")))   // title shell-quoted
+        XCTAssertTrue(s.contains(shquote("Fix the $HOME 'login'")))
         XCTAssertTrue(s.contains("cd /repo/wt"))
-        XCTAssertTrue(s.contains("exec claude 'the prompt'"))          // agent replaces the shell
+        XCTAssertTrue(s.contains("exec claude 'the prompt'"))
         XCTAssertFalse(s.contains("tmux"))
-        XCTAssertFalse(s.contains("exec zsh"))                         // no trailing shell → window closes
+        XCTAssertFalse(s.contains("exec zsh"))
     }
 
-    // Tab-mode launch script keeps a shell after the agent but MUST skip rc files
-    // (a .zshrc session picker would hijack the finished tab).
     func testDefaultScriptTrailingShellSkipsRcFiles() throws {
         let path = TerminalLauncher.defaultWriteScript(inv)
         defer { try? FileManager.default.removeItem(atPath: path) }

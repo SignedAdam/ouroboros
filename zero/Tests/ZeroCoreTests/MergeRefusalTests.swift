@@ -1,19 +1,7 @@
 import XCTest
 @testable import ZeroCore
 
-/// The operator clicked merge, the panel said "merging…", and then nothing happened.
-///
-/// The merge had been refused for a good reason — uncommitted tracked changes,
-/// which is exactly when you do not want a merge landing on top of you. But
-/// `mergeNow` reported a refusal by handing back the unchanged `Run`, and a
-/// completed merge by handing back a changed one. The daemon returned 200 for
-/// both, so every caller except the inbox, which re-reads the run anyway, saw a
-/// refusal as a success.
-///
-/// A verb that can be refused has to say so in its answer, not in a field the
-/// caller has to know to go and look at.
 final class MergeRefusalTests: XCTestCase {
-
     private var root: String!
     private var home: String!
 
@@ -43,8 +31,6 @@ final class MergeRefusalTests: XCTestCase {
         try? body.write(toFile: root + "/" + name, atomically: true, encoding: .utf8)
     }
 
-    /// Builds a supervisor over the scratch repo with one verified run sitting
-    /// on a branch, which is the state the inbox calls `review`.
     private func supervisorWithReviewableRun() throws -> (Supervisor, String) {
         let git = Git(root)
         git.run(["checkout", "-q", "-b", "fix/thing"])
@@ -69,7 +55,7 @@ final class MergeRefusalTests: XCTestCase {
 
     func testADirtyTreeRefusesTheMergeAndSaysWhy() throws {
         let (supervisor, id) = try supervisorWithReviewableRun()
-        // The thing that actually happened: an edited, tracked, uncommitted file.
+
         write("tracked.txt", "one\nedited by a human mid-thought\n")
 
         let (run, refused) = supervisor.mergeNow(id)
@@ -87,8 +73,6 @@ final class MergeRefusalTests: XCTestCase {
         XCTAssertEqual(run?.mergedInto, "main")
     }
 
-    /// The second click. Without this the panel would merge, refresh, and offer
-    /// merge again on a row that had already landed.
     func testMergingTwiceIsRefusedRatherThanRepeated() throws {
         let (supervisor, id) = try supervisorWithReviewableRun()
         _ = supervisor.mergeNow(id)

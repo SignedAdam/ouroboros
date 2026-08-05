@@ -11,16 +11,12 @@ struct OuroborosZeroApp: App {
         MenuBarExtra {
             PanelView(model: delegate.model)
         } label: {
-            // Ambient status, no numbers: the mark lights up while agents work.
             MenuBarIcon(model: delegate.model)
         }
         .menuBarExtraStyle(.window)
     }
 }
 
-/// `MenuBarExtra`'s label is rendered into a template image, so a `Canvas`
-/// (which the brand mark uses) can't be drawn there directly — it has to be
-/// rasterised first. Rendering once per state change keeps that cheap.
 struct MenuBarIcon: View {
     @ObservedObject var model: AppModel
 
@@ -52,8 +48,7 @@ struct MenuBarIcon: View {
         renderer.scale = 2
         guard let cgImage = renderer.cgImage else { return nil }
         let image = NSImage(cgImage: cgImage, size: NSSize(width: side, height: side))
-        // Only the idle mark is a template — the coloured states must keep their
-        // colour so "something is running" reads at a glance.
+
         image.isTemplate = !active && !needsYou
         cache[key] = image
         return image
@@ -67,7 +62,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var quickCapture: QuickCaptureController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Menu-bar only: no dock icon, no app switcher entry.
         NSApp.setActivationPolicy(.accessory)
 
         model.ensureDaemon()
@@ -76,11 +70,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let capture = QuickCaptureController(model: model)
         quickCapture = capture
 
-        // The configured combo is a preference, not a promise: another app may
-        // already own it, and Carbon only tells you by failing. The manager walks
-        // its fallbacks and hands back the one it really got — which is also the
-        // one the capture panel's footer shows, so the app never advertises a key
-        // that does nothing.
         let preferred = Config.load().hotkey
         let wanted = preferred.trimmingCharacters(in: .whitespaces).lowercased()
         if let combo = hotkey.register(preferred: preferred, action: { [weak capture] in

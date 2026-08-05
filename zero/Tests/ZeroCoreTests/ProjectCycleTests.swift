@@ -1,10 +1,6 @@
 import XCTest
 @testable import ZeroCore
 
-// ⇥ / ⇧⇥ in the capture panel. The key is swallowed before the text field ever
-// sees it, so every one of these edge cases fails as "tab does nothing" or as a
-// crash on a keystroke — neither of which a diff shows.
-
 final class ProjectCycleTests: XCTestCase {
     private let order = ["zero", "orbit", "lantern", "harbor"]
 
@@ -31,7 +27,6 @@ final class ProjectCycleTests: XCTestCase {
         XCTAssertEqual(id, "zero")
     }
 
-    /// A project picked from the full folder menu need not be in the recents.
     func testAnUnknownSelectionEntersFromTheEndYouAreWalkingTowards() {
         XCTAssertEqual(ProjectCycle.step(from: "atlantis", in: order, by: 1), "zero")
         XCTAssertEqual(ProjectCycle.step(from: "atlantis", in: order, by: -1), "harbor")
@@ -49,8 +44,6 @@ final class ProjectCycleTests: XCTestCase {
         XCTAssertEqual(ProjectCycle.step(from: "zero", in: ["zero"], by: -1), "zero")
     }
 
-    /// Held-down tab arrives as a stream of single steps, but nothing stops a
-    /// caller passing a bigger one — it must still land inside the list.
     func testStepsLargerThanTheListStayInBounds() {
         XCTAssertEqual(ProjectCycle.step(from: "zero", in: order, by: 9), "orbit")
         XCTAssertEqual(ProjectCycle.step(from: "zero", in: order, by: -9), "harbor")

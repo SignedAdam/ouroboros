@@ -1,6 +1,5 @@
 import Foundation
 
-/// Minimal POSIX shell quoting for building the launch script + command strings.
 func shquote(_ s: String) -> String {
     if s.isEmpty { return "''" }
     let safe = CharacterSet(charactersIn:
@@ -12,16 +11,12 @@ func shquote(_ s: String) -> String {
 public struct TerminalLauncher: Sendable {
     public enum Kind: String, Sendable {
         case ghosttyTmuxTab, ghosttyCinemaWindow, osDefault, custom
-        /// A plain window that stays open — for the things a person drives
-        /// rather than watches: reopening an agent's conversation, agent view.
-        /// No splash, no self-closing, no tmux session to get tangled in.
+
         case ghosttyWindow
     }
 
     public let kind: Kind
-    /// The dedicated tmux session agents live in. Agents NEVER open windows in the
-    /// user's own session — selecting a new window there yanks their current view
-    /// ("a terminal spawned on top of mine"). All fixes stack as tabs here instead.
+
     public let sessionName: String
     let run: @Sendable ([String]) -> Void
     let capture: @Sendable ([String]) -> String
@@ -56,15 +51,6 @@ public struct TerminalLauncher: Sendable {
         }
     }
 
-    // Cinema mode: one dedicated Ghostty window per fix — splash banner, then the
-    // agent runs live in that window; it closes itself when the agent exits.
-    //
-    // Launch the Ghostty BINARY directly, never via `open -na`: `open` makes the
-    // fresh Ghostty instance create its configured default window (the user's
-    // shell/session-picker) IN ADDITION to our `-e` surface — two tabs per fix.
-    // A direct `ghostty -e …` invocation creates exactly one window running
-    // exactly our command, and --quit-after-last-window-closed ends the instance
-    // with the agent.
     private func launchCinema(_ inv: AgentInvocation) {
         let path = (NSTemporaryDirectory() as NSString)
             .appendingPathComponent("ouroboros-cinema-\(UUID().uuidString).command")
@@ -74,7 +60,7 @@ public struct TerminalLauncher: Sendable {
             attributes: [.posixPermissions: 0o700]) {
             written = path
         } else {
-            written = writeScript(inv)   // test seam / degraded fallback: plain agent script
+            written = writeScript(inv)
         }
         run([ghosttyBinary(),
              "--window-width=110", "--window-height=32", "--title=ouroboros",
@@ -82,8 +68,6 @@ public struct TerminalLauncher: Sendable {
              "-e", "zsh", written])
     }
 
-    /// The Ghostty executable: the `ghostty` CLI if it's on the user's PATH, else
-    /// the app bundle's binary. (Resolved through `capture`, i.e. a login shell.)
     func ghosttyBinary() -> String {
         let cli = capture(["command", "-v", "ghostty"])
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -92,16 +76,14 @@ public struct TerminalLauncher: Sendable {
 
     private func launchGhosttyTmuxTab(_ inv: AgentInvocation, _ script: String) {
         let runIn = "zsh \(shquote(script))"
-        // First fix creates the dedicated session; later fixes add windows (tabs) to it.
+
         if sessionExists() {
             run(["tmux", "new-window", "-t", sessionName, "-c", inv.cwd, "-n", inv.label, runIn])
         } else {
             run(["tmux", "new-session", "-d", "-s", sessionName, "-n", inv.label,
                  "-c", inv.cwd, runIn])
         }
-        // Surface it only when nobody is watching: attach a Ghostty window to the
-        // agents' session. Direct binary, not `open -na` (which adds the instance's
-        // default window — the user's picker — as a second tab).
+
         if !sessionHasClient() {
             run([ghosttyBinary(), "--quit-after-last-window-closed=true",
                  "-e", "tmux", "attach", "-t", sessionName])
@@ -118,14 +100,6 @@ public struct TerminalLauncher: Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    // MARK: cinema script
-
-    /// The zsh script behind cinema mode — NO tmux: print the splash banner
-    /// (mark word-art, "fixing your issue", the title), pause a beat, then exec
-    /// the agent in this same window. The agent gets a real interactive TTY (the
-    /// user can watch and type to it); when it exits, the shell is gone and the
-    /// Ghostty window closes itself. Non-interactive zsh means the user's shell
-    /// rc (session pickers etc.) never runs.
     static func cinemaScript(_ inv: AgentInvocation) -> String {
         let agentCmd = inv.argv.map(shquote).joined(separator: " ")
         let title = inv.title.isEmpty ? inv.label : inv.title
@@ -146,9 +120,6 @@ public struct TerminalLauncher: Sendable {
         exec \#(agentCmd)
         """#
     }
-
-
-    // MARK: defaults (run via login shell so homebrew PATH resolves from Finder-launched apps)
 
     static let defaultRun: @Sendable ([String]) -> Void = { argv in
         let cmd = argv.map(shquote).joined(separator: " ")
@@ -176,8 +147,7 @@ public struct TerminalLauncher: Sendable {
 
     static let defaultWriteScript: @Sendable (AgentInvocation) -> String = { inv in
         let argv = inv.argv.map(shquote).joined(separator: " ")
-        // zsh -f: keep the pane alive after the agent WITHOUT sourcing rc files
-        // (a .zshrc tmux session picker would hijack the finished tab).
+
         let body = "cd \(shquote(inv.cwd))\n\(argv)\nexec zsh -f\n"
         let path = (NSTemporaryDirectory() as NSString)
             .appendingPathComponent("ouroboros-launch-\(UUID().uuidString).command")

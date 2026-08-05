@@ -1,13 +1,10 @@
 import Foundation
 import ZeroCore
 
-// A write to a socket whose reader vanished must not kill the daemon.
 signal(SIGPIPE, SIG_IGN)
 
 Paths.ensure()
 
-// One daemon per home. A stale pid file (crash, reboot) is not an error —
-// only a pid that is actually alive is.
 if let pidText = try? String(contentsOfFile: Paths.pidFile, encoding: .utf8),
    let pid = Int32(pidText.trimmingCharacters(in: .whitespacesAndNewlines)),
    pid > 0, kill(pid, 0) == 0, pid != ProcessInfo.processInfo.processIdentifier {

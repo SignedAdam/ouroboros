@@ -1,16 +1,5 @@
 import Foundation
 
-/// The capture field's command line.
-///
-/// Typing a sentence is already the fastest way to file an issue, so everything
-/// else Zero can do had to become reachable from that same field rather than
-/// from a settings window nobody opens. Every command below is one HTTP call an
-/// AI operator could make with `curl` — the panel keeps its promise of having no
-/// private powers.
-///
-/// It lives in ZeroCore rather than next to the SwiftUI palette because none of
-/// it is UI: the table, the matcher and the tokenizer are the grammar of the
-/// product, and the app, the CLI and the tests all deserve the same one.
 public struct SlashCommand: Identifiable, Hashable, Sendable {
     public var id: String { name }
     public let name: String
@@ -27,13 +16,6 @@ public struct SlashCommand: Identifiable, Hashable, Sendable {
 }
 
 public enum SlashCommands {
-
-    /// Declaration order is what a bare "/" shows, so it runs from the two
-    /// commands the product is shaped around down to the app's own plumbing.
-    ///
-    /// `/add` adopts a directory that already exists; `/new` brings one into
-    /// being. Keeping those separate is the whole reason there are two verbs:
-    /// one of them can destroy an afternoon by scaffolding over your work.
     public static let all: [SlashCommand] = [
         SlashCommand(name: "add", aliases: ["add-project"], argHint: "[path]",
                      summary: "adopt a directory that already exists"),
@@ -90,9 +72,7 @@ public enum SlashCommands {
                      summary: "find and adopt your projects"),
         SlashCommand(name: "update", aliases: ["upgrade"], argHint: "",
                      summary: "pull and rebuild ouroboros itself"),
-        // Distinct from /update, which pulls first. /rebuild takes the source
-        // exactly as it stands on disk, which is what you want the moment an
-        // agent has merged a fix into it and you want to be running that fix.
+
         SlashCommand(name: "rebuild", aliases: [], argHint: "from source",
                      summary: "rebuild from the code on disk and restart"),
         SlashCommand(name: "hotkey", aliases: [], argHint: "<combo>",
@@ -105,14 +85,11 @@ public enum SlashCommands {
                      summary: "quit Ouroboros Zero"),
     ]
 
-    /// input is the raw field text. Returns [] when it is not a slash command.
     public static func suggestions(for input: String) -> [SlashCommand] {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.hasPrefix("/") else { return [] }
         let query = String(text.dropFirst())
-        // A space means the command has been chosen and the user is typing its
-        // arguments — the palette must get out of the way, and out of the way of
-        // the return key, or there is no way to ever submit `/idea …`.
+
         guard !query.contains(where: { $0.isWhitespace }) else { return [] }
         guard !query.isEmpty else { return all }
 
@@ -132,7 +109,6 @@ public enum SlashCommands {
         return exact + byName + byAlias
     }
 
-    /// nil when the text does not resolve to a known command.
     public static func parse(_ input: String) -> (command: SlashCommand, args: [String])? {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.hasPrefix("/"), text.count > 1 else { return nil }
@@ -146,8 +122,6 @@ public enum SlashCommands {
         return all.first { $0.name == needle || $0.aliases.contains(needle) }
     }
 
-    /// Whitespace-separated, but `"quoted runs"` survive as one argument —
-    /// `/rename "old name" new` is a thing people will type on day one.
     public static func tokenize(_ text: String) -> [String] {
         var tokens: [String] = []
         var current = ""
@@ -176,9 +150,6 @@ public enum SlashCommands {
         return tokens
     }
 
-    /// The directory names itself, exactly as it is spelled on disk: `/add
-    /// ~/dev/Acme` registers "Acme", capital N and all. Only trailing
-    /// slashes are noise, so `/dev/acme/` is still "acme".
     public static func projectName(forPath path: String) -> String {
         var trimmed = path
         while trimmed.count > 1 && trimmed.hasSuffix("/") { trimmed.removeLast() }

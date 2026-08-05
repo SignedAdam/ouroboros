@@ -2,15 +2,7 @@ import XCTest
 import Foundation
 @testable import ZeroCore
 
-// The capture field is the whole product surface, and every one of these rules
-// is invisible when it breaks: a palette that stops matching aliases, a `/`
-// that shows nothing, a quoted argument that silently splits in two. None of it
-// throws — it just quietly does the wrong thing — so it is all pinned here.
-
-// MARK: - the palette
-
 final class SlashSuggestionTests: XCTestCase {
-
     private func names(_ input: String) -> [String] {
         SlashCommands.suggestions(for: input).map(\.name)
     }
@@ -18,7 +10,7 @@ final class SlashSuggestionTests: XCTestCase {
     func testPlainTextIsNotACommand() {
         XCTAssertEqual(names(""), [])
         XCTAssertEqual(names("the sidebar is empty"), [])
-        // A path is a sentence, not a command — "/tmp is full" is a bug report.
+
         XCTAssertEqual(names("tmp/ is full"), [])
     }
 
@@ -40,15 +32,11 @@ final class SlashSuggestionTests: XCTestCase {
     }
 
     func testPrefixMatchesOnAliasesToo() {
-        // "reveal" is /open, "revert" is /undo — neither command's own name
-        // starts with "rev", so only the alias pass can find them.
         XCTAssertEqual(names("/rev"), ["open", "undo"])
         XCTAssertEqual(names("/harn"), ["agent"])
     }
 
     func testExactMatchesComeFirst() {
-        // "p" is an alias of /project, so it outranks /promote, whose *name*
-        // merely starts with p, which outranks /runs, reached only via "ps".
         XCTAssertEqual(names("/p"), ["project", "promote", "runs"])
     }
 
@@ -68,17 +56,12 @@ final class SlashSuggestionTests: XCTestCase {
     }
 
     func testASpaceDismissesThePalette() {
-        // Once an argument is being typed the palette must stop eating the
-        // return key, or `/idea buy milk` can never be submitted.
         XCTAssertEqual(names("/idea buy milk"), [])
         XCTAssertEqual(names("/add ~/dev/acme"), [])
     }
 }
 
-// MARK: - the parser
-
 final class SlashParseTests: XCTestCase {
-
     func testParsesCommandAndArguments() {
         let parsed = SlashCommands.parse("/rename monda atlas")
         XCTAssertEqual(parsed?.command.name, "rename")
@@ -110,8 +93,6 @@ final class SlashParseTests: XCTestCase {
     }
 
     func testUnknownCommandsAreNotCommands() {
-        // These fall through to being filed as ordinary issues, so returning nil
-        // is the whole safety net: "/tmp is full" must reach the issue tracker.
         XCTAssertNil(SlashCommands.parse("/tmp is full"))
         XCTAssertNil(SlashCommands.parse("/zzz"))
         XCTAssertNil(SlashCommands.parse("/ADDD"))
@@ -138,10 +119,7 @@ final class SlashParseTests: XCTestCase {
     }
 }
 
-// MARK: - the tokenizer
-
 final class SlashTokenizeTests: XCTestCase {
-
     func testRunsOfWhitespaceAreOneSeparator() {
         XCTAssertEqual(SlashCommands.tokenize("a  b\tc\nd"), ["a", "b", "c", "d"])
         XCTAssertEqual(SlashCommands.tokenize("   "), [])
@@ -154,7 +132,6 @@ final class SlashTokenizeTests: XCTestCase {
     }
 
     func testAnEmptyQuotedTokenSurvives() {
-        // "" is a deliberate empty argument — /verify "" means "no command".
         XCTAssertEqual(SlashCommands.tokenize("verify \"\""), ["verify", ""])
     }
 
@@ -163,20 +140,13 @@ final class SlashTokenizeTests: XCTestCase {
     }
 
     func testAnUnterminatedQuoteRunsToTheEnd() {
-        // The trailing quote is optional, which also means an apostrophe glues
-        // the rest of the line into one argument. Fine where it lands — every
-        // caller that cares re-joins its arguments with a space anyway.
         XCTAssertEqual(SlashCommands.tokenize("\"old name"), ["old name"])
         XCTAssertEqual(SlashCommands.tokenize("r-1 it's fine"), ["r-1", "its fine"])
     }
 }
 
-// MARK: - /add's path-to-name rule
-
 final class SlashProjectNameTests: XCTestCase {
-
     func testTheDirectoryNamesItself() {
-        // Capital N and all: /add ~/dev/Acme registers "Acme", not "acme".
         XCTAssertEqual(SlashCommands.projectName(forPath: "/dev/Acme"), "Acme")
         XCTAssertEqual(SlashCommands.projectName(forPath: "/Users/you/dev/Acme"), "Acme")
     }
@@ -193,7 +163,6 @@ final class SlashProjectNameTests: XCTestCase {
     }
 
     func testTheParsedArgumentFeedsTheRuleStraightThrough() {
-        // The path the user typed after /add is exactly what the rule sees.
         let parsed = SlashCommands.parse("/add /dev/Acme")
         XCTAssertEqual(parsed?.command.name, "add")
         XCTAssertEqual(SlashCommands.projectName(forPath: parsed?.args.first ?? ""), "Acme")
@@ -203,10 +172,7 @@ final class SlashProjectNameTests: XCTestCase {
     }
 }
 
-// MARK: - the table itself
-
 final class SlashTableTests: XCTestCase {
-
     func testEveryNameIsMatchable() {
         for command in SlashCommands.all {
             XCTAssertEqual(command.name, command.name.lowercased(),

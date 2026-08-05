@@ -1,8 +1,5 @@
 import Foundation
 
-/// The client every face uses. The CLI and the menu-bar app talk to `ourod`
-/// through exactly this type and nothing else — which is the mechanical
-/// enforcement of "the GUI has no private powers".
 public final class ZeroClient: @unchecked Sendable {
     public let socketPath: String
     public let host: (String, Int)?
@@ -32,8 +29,6 @@ public final class ZeroClient: @unchecked Sendable {
             }
         }
     }
-
-    // MARK: connection
 
     private func connectSocket() throws -> Int32 {
         if let (h, port) = host {
@@ -109,8 +104,6 @@ public final class ZeroClient: @unchecked Sendable {
         return out
     }
 
-    // MARK: requests
-
     @discardableResult
     public func sendRaw(_ method: String, _ path: String, body: Data? = nil) throws -> (Int, Data) {
         let fd = try connectSocket()
@@ -175,10 +168,6 @@ public final class ZeroClient: @unchecked Sendable {
         (try? get("/v1/health", as: HealthDTO.self))?.ok ?? false
     }
 
-    // MARK: streaming
-
-    /// Follow `GET /v1/events`. `onEvent` returns false to stop. Blocking —
-    /// callers run it on their own thread.
     public func stream(_ path: String, onEvent: @escaping (String, Data) -> Bool) throws {
         let fd = try connectSocket()
         defer { close(fd) }
@@ -199,7 +188,6 @@ public final class ZeroClient: @unchecked Sendable {
                 headersDone = true
             }
 
-            // Frames are separated by a blank line.
             while let sep = buffer.range(of: Data("\n\n".utf8)) {
                 let frame = String(data: buffer[..<sep.lowerBound], encoding: .utf8) ?? ""
                 buffer = Data(buffer[sep.upperBound...])
@@ -208,7 +196,7 @@ public final class ZeroClient: @unchecked Sendable {
                 for line in frame.components(separatedBy: "\n") {
                     if line.hasPrefix("event: ") { name = String(line.dropFirst(7)) }
                     if line.hasPrefix("data: ") { payload += String(line.dropFirst(6)) }
-                    if line.hasPrefix(":") { continue }   // keep-alive comment
+                    if line.hasPrefix(":") { continue }
                 }
                 if payload.isEmpty && name == "message" { continue }
                 if !onEvent(name, Data(payload.utf8)) { return }

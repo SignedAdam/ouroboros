@@ -1,11 +1,5 @@
 import Foundation
 
-// A small HTTP/1.1 server over a unix-domain socket (and, optionally, loopback
-// TCP). Deliberately dependency-free: Zero ships as three static binaries and a
-// menu-bar app, and adding a server framework to get ~15 local routes would be
-// the wrong trade. Filesystem permissions on the socket are the auth story for
-// the local case; the TCP listener requires a bearer token.
-
 public struct HTTPRequest {
     public let method: String
     public let path: String
@@ -36,8 +30,7 @@ public struct HTTPResponse {
     public var status: Int
     public var headers: [String: String]
     public var body: Data
-    /// When set, the connection is handed to this closure instead of being
-    /// closed — that's how `GET /v1/events` becomes a live SSE stream.
+
     public var stream: ((SSEConnection) -> Void)?
 
     public init(status: Int = 200, headers: [String: String] = [:], body: Data = Data(),
@@ -67,7 +60,6 @@ public struct HTTPResponse {
     public static let noContent = HTTPResponse(status: 204)
 }
 
-/// A live server-sent-events connection.
 public final class SSEConnection: @unchecked Sendable {
     private let fd: Int32
     private let lock = NSLock()
@@ -132,14 +124,7 @@ public final class HTTPServer: @unchecked Sendable {
         self.token = token
     }
 
-    // MARK: listeners
-
     public func listenUnix(path: String) throws {
-        // Never unlink unconditionally. A socket file can mean one of two very
-        // different things — a crashed daemon left it behind, or a live daemon
-        // owns it — and blindly removing it lets a second daemon steal the
-        // socket from a running one. Both then think they own the same runs.
-        // Probe first: if something answers, refuse to start.
         if FileManager.default.fileExists(atPath: path) {
             if HTTPServer.isSocketAlive(path) { throw ServerError.alreadyRunning }
             unlink(path)
@@ -166,7 +151,7 @@ public final class HTTPServer: @unchecked Sendable {
             }
         }
         guard bound == 0 else { close(fd); throw ServerError.bind(errno) }
-        // Owner-only: the socket IS the authentication for local clients.
+
         chmod(path, 0o600)
         guard listen(fd, 64) == 0 else { close(fd); throw ServerError.listen(errno) }
         listeners.append(fd)
@@ -182,7 +167,7 @@ public final class HTTPServer: @unchecked Sendable {
         addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
         addr.sin_family = sa_family_t(AF_INET)
         addr.sin_port = UInt16(port).bigEndian
-        addr.sin_addr.s_addr = UInt32(0x7F000001).bigEndian   // 127.0.0.1 only
+        addr.sin_addr.s_addr = UInt32(0x7F000001).bigEndian
         let bound = withUnsafePointer(to: &addr) { p in
             p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
                 bind(fd, sa, socklen_t(MemoryLayout<sockaddr_in>.size))
@@ -192,8 +177,6 @@ public final class HTTPServer: @unchecked Sendable {
         guard listen(fd, 64) == 0 else { close(fd); throw ServerError.listen(errno) }
         listeners.append(fd)
     }
-
-    // MARK: accept loop
 
     public func start() {
         for fd in listeners {
@@ -243,19 +226,16 @@ public final class HTTPServer: @unchecked Sendable {
             head += "Connection: keep-alive\r\n\r\n"
             _ = head.withCString { write(fd, $0, strlen($0)) }
             stream(SSEConnection(fd: fd))
-            return   // ownership of fd passes to the SSE connection
+            return
         }
         writeResponse(fd, response)
         close(fd)
     }
 
-    // MARK: parse / write
-
     private func readRequest(_ fd: Int32) -> HTTPRequest? {
         var buffer = Data()
         var chunk = [UInt8](repeating: 0, count: 8192)
 
-        // Headers first.
         var headerEnd: Range<Data.Index>?
         while headerEnd == nil {
             let n = read(fd, &chunk, chunk.count)
@@ -283,7 +263,6 @@ public final class HTTPServer: @unchecked Sendable {
             headers[key] = value
         }
 
-        // Body.
         var body = Data(buffer[hdrEnd.upperBound...])
         if let lengthText = headers["content-length"], let length = Int(lengthText) {
             while body.count < length {
@@ -319,8 +298,6 @@ public final class HTTPServer: @unchecked Sendable {
             }
         }
     }
-
-    // MARK: helpers
 
     public static func splitTarget(_ target: String) -> (String, [String: String]) {
         guard let qIndex = target.firstIndex(of: "?") else {
@@ -358,7 +335,6 @@ public final class HTTPServer: @unchecked Sendable {
         }
     }
 
-    /// Can something be connected to at this socket path right now?
     static func isSocketAlive(_ path: String) -> Bool {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return false }

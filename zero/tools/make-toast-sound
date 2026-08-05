@@ -24,8 +24,6 @@ import wave
 
 RATE = 48_000
 
-# The chosen sound. Everything here is overridable from the command line; these
-# are simply the values that won the audition.
 DEFAULTS = dict(
     base=880.0,      # Hz of the first chirp
     interval=1.122,  # second chirp relative to the first (a whole tone up)
@@ -38,13 +36,10 @@ DEFAULTS = dict(
     second=0.78,     # gain of the second chirp relative to the first
 )
 
-
 def chirp(t, base, gain, p):
     """One pitch sweep with a fast attack and an exponential tail."""
     if t < 0 or t > 1.0:
         return 0.0
-    # Phase of a linear frequency sweep is the integral of f(t), and the sweep
-    # stops at `glide` so the tail holds a steady pitch instead of running away.
     k = (base * (p.sweep - 1.0)) / p.glide
     swept = min(t, p.glide)
     phase = 2 * math.pi * (base * t + 0.5 * k * swept ** 2)
@@ -53,7 +48,6 @@ def chirp(t, base, gain, p):
             + p.shimmer * 0.3 * math.sin(3 * phase))
     attack = min(1.0, t / 0.006)          # fast, but never a click
     return tone * attack * math.exp(-t * p.decay) * gain
-
 
 def render(p):
     voices = [(0.0, p.base, 1.0), (p.gap, p.base * p.interval, p.second)]
@@ -74,7 +68,6 @@ def render(p):
     peak = max(abs(s) for s in out) or 1.0
     return [s / peak * 0.78 for s in out]
 
-
 def write(path, samples):
     with wave.open(path, "w") as f:
         f.setnchannels(1)
@@ -83,7 +76,6 @@ def write(path, samples):
         f.writeframes(b"".join(
             struct.pack("<h", int(max(-1.0, min(1.0, s)) * 32767)) for s in samples))
 
-
 def parser():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -91,7 +83,6 @@ def parser():
     for name, value in DEFAULTS.items():
         ap.add_argument(f"--{name}", type=float, default=value)
     return ap
-
 
 if __name__ == "__main__":
     args = parser().parse_args()

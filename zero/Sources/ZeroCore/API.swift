@@ -1,12 +1,6 @@
 import Foundation
 
-/// The wire contract. Shared by the daemon, the CLI and the app so there is
-/// exactly one definition of every request — and so an AI operator reading this
-/// file knows the whole surface.
 public enum API {
-
-    // MARK: projects
-
     public struct RegisterProject: Codable, Sendable {
         public var path: String
         public var name: String?
@@ -28,9 +22,9 @@ public enum API {
         public var worktreeDefault: Bool?
         public var finishDefault: String?
         public var protectedPaths: [String]?
-        /// Pin to the top of the capture panel.
+
         public var favourite: Bool?
-        /// Drop out of the capture panel until Ouroboros is used here again.
+
         public var hidden: Bool?
         public init(name: String? = nil, baseBranch: String? = nil, verifyCmd: String? = nil,
                     defaultAgent: String? = nil, autonomy: String? = nil, maxParallel: Int? = nil,
@@ -44,7 +38,6 @@ public enum API {
         }
     }
 
-    /// What a resume produced: the command that ran, and where it ran.
     public struct Resumed: Codable, Sendable {
         public var runId: String
         public var command: String
@@ -62,11 +55,9 @@ public enum API {
         }
     }
 
-    /// A project's local branches, so the capture panel can offer `base` as a
-    /// list to pick from instead of a name you have to spell correctly.
     public struct BranchList: Codable, Sendable {
         public var branches: [String]
-        /// What the project dispatches against today.
+
         public var base: String
         public init(branches: [String], base: String) {
             self.branches = branches; self.base = base
@@ -86,17 +77,14 @@ public enum API {
         }
     }
 
-    /// Scaffold a brand new project (directory, git, optional GitHub repo,
-    /// optional AI-drafted roadmap). Distinct from `RegisterProject`, which
-    /// adopts a directory that already exists.
     public struct CreateProject: Codable, Sendable {
         public var name: String
-        /// Defaults to `<projectsRoot>/<name>`.
+
         public var dir: String?
         public var description: String?
-        /// "public" | "private" | nil to skip GitHub entirely.
+
         public var github: String?
-        /// "ai" to spawn a planning run that writes docs/ROADMAP.md, else nil.
+
         public var roadmap: String?
         public var agent: String?
         public init(name: String, dir: String? = nil, description: String? = nil,
@@ -115,7 +103,6 @@ public enum API {
         }
     }
 
-    /// First-run setup: scan roots, register what's there, report what happened.
     public struct SetupRequest: Codable, Sendable {
         public var roots: [String]?
         public init(roots: [String]? = nil) { self.roots = roots }
@@ -133,13 +120,12 @@ public enum API {
         }
     }
 
-    /// Self-update from the checkout Ouroboros was built from.
     public struct UpdateResponse: Codable, Sendable {
         public var ok: Bool
         public var fromCommit: String
         public var toCommit: String
         public var message: String
-        /// True when binaries changed and the daemon is about to restart.
+
         public var restarting: Bool
         public init(ok: Bool, fromCommit: String, toCommit: String, message: String,
                     restarting: Bool = false) {
@@ -148,16 +134,12 @@ public enum API {
         }
     }
 
-    // MARK: issues
-
     public struct CreateIssue: Codable, Sendable {
-        /// Project id/name. Omitted → resolved from `cwd`, then from the most
-        /// recently used project. This is what makes `ouro i "…"` a one-liner.
         public var project: String?
         public var cwd: String?
         public var title: String?
         public var body: String
-        /// Dispatch an agent immediately.
+
         public var fix: Bool?
         public var agent: String?
         public var worktree: Bool?
@@ -198,8 +180,6 @@ public enum API {
         }
     }
 
-    // MARK: runs
-
     public struct Freeform: Codable, Sendable {
         public var project: String?
         public var cwd: String?
@@ -218,7 +198,7 @@ public enum API {
 
     public struct Reply: Codable, Sendable {
         public var answer: String
-        /// Optional harness switch — "you couldn't do it, let codex try".
+
         public var agent: String?
         public init(answer: String, agent: String? = nil) {
             self.answer = answer; self.agent = agent
@@ -240,8 +220,6 @@ public enum API {
         public var text: String
         public init(runId: String, text: String) { self.runId = runId; self.text = text }
     }
-
-    // MARK: ideas & proposals
 
     public struct CreateIdea: Codable, Sendable {
         public var title: String?
@@ -267,8 +245,7 @@ public enum API {
         public var title: String
         public var body: String
         public var source: String
-        /// Required in spirit: without it, a screen-watcher fills the inbox with
-        /// the same observation forty times. Omitted → derived from project+title.
+
         public var dedupeKey: String?
         public var confidence: Double?
         public var evidence: [String]?
@@ -282,14 +259,12 @@ public enum API {
 
     public struct ProposalCreated: Codable, Sendable {
         public var proposal: Proposal
-        /// false when an identical pending proposal already existed.
+
         public var created: Bool
         public init(proposal: Proposal, created: Bool) {
             self.proposal = proposal; self.created = created
         }
     }
-
-    // MARK: misc
 
     public struct Message: Codable, Sendable {
         public var ok: Bool
@@ -327,21 +302,15 @@ public enum API {
         public init(proposals: [Proposal]) { self.proposals = proposals }
     }
 
-    /// The one number the capture panel puts on its footer: how much work
-    /// Ouroboros has actually done, and how much is in the air right now.
-    ///
-    /// Counted from the runs still on disk, which `RunStore.prune` trims after
-    /// a month — an honest "lately", not a lifetime tally.
     public struct Stats: Codable, Sendable, Equatable {
         public var handled: Int
         public var fixed: Int
         public var failed: Int
         public var running: Int
-        /// Issues filed and never dispatched, across the projects on show.
+
         public var tasks: Int
         public var projects: Int
-        /// The last dozen runs' statuses, oldest first — a tape you can read
-        /// at a glance without reading a single word.
+
         public var tape: [RunStatus]
 
         public init(handled: Int = 0, fixed: Int = 0, failed: Int = 0, running: Int = 0,
@@ -352,19 +321,16 @@ public enum API {
         }
     }
 
-    /// One call the menu-bar app makes on every open: everything the panel needs.
     public struct Snapshot: Codable, Sendable {
         public var health: HealthDTO
         public var projects: [Project]
         public var inbox: [InboxItem]
         public var activeRuns: [Run]
         public var recentRuns: [Run]
-        /// The projects worth offering you, richest first: the ones you have
-        /// pointed Ouroboros at, then the ones you have been committing to.
+
         public var recents: [ProjectDigest]
         public var stats: Stats
-        /// The harnesses this machine can dispatch to, so the panel can offer a
-        /// choice without probing PATH from inside the app.
+
         public var agents: [AgentInfo]
 
         public init(health: HealthDTO, projects: [Project], inbox: [InboxItem],
@@ -376,11 +342,6 @@ public enum API {
             self.recents = recents; self.stats = stats; self.agents = agents
         }
 
-        // A daemon that has not been restarted since the app was updated is a
-        // normal state on a machine where both are built from the same
-        // checkout. Decoding what it does send, rather than failing the whole
-        // snapshot on a missing key, keeps that mismatch to an empty drawer
-        // instead of a panel that says it cannot see the daemon at all.
         public init(from decoder: Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             health = try c.decode(HealthDTO.self, forKey: .health)

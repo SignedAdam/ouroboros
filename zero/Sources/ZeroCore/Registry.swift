@@ -1,8 +1,5 @@
 import Foundation
 
-/// The project registry. `projects.json` is a *cache of intent* — which
-/// directories the operator considers projects — not a source of truth about their
-/// contents. Issues always come from the repos themselves.
 public final class Registry: @unchecked Sendable {
     private let lock = NSLock()
     private var projects: [Project]
@@ -13,13 +10,6 @@ public final class Registry: @unchecked Sendable {
         self.projects = Zero.readJSON([Project].self, from: file) ?? []
     }
 
-    /// Projects you have actually used come first, most recent first; everything
-    /// else follows alphabetically.
-    ///
-    /// The subtlety is that `ouro setup` registers every repo under `~/dev` in
-    /// one go. If registration counted as use, all 57 would sort by the
-    /// microsecond they happened to be written, and the capture panel would
-    /// default to whichever one won that race. It picked `zzworld`.
     public func all() -> [Project] {
         lock.lock(); defer { lock.unlock() }
         return projects.sorted { a, b in
@@ -39,7 +29,7 @@ public final class Registry: @unchecked Sendable {
         let needle = idOrName.lowercased()
         if let exact = projects.first(where: { $0.id.lowercased() == needle }) { return exact }
         if let byName = projects.first(where: { $0.name.lowercased() == needle }) { return byName }
-        // Unambiguous prefix — `ouro i -p monda` should work.
+
         let matches = projects.filter {
             $0.id.lowercased().hasPrefix(needle) || $0.name.lowercased().hasPrefix(needle)
         }
@@ -52,8 +42,6 @@ public final class Registry: @unchecked Sendable {
         return projects.first { Registry.normalize($0.path) == normalized }
     }
 
-    /// The project that *contains* this path — how `ouro i` figures out where
-    /// you are without being told.
     public func containing(_ path: String) -> Project? {
         let normalized = Registry.normalize(path)
         lock.lock()
@@ -99,9 +87,7 @@ public final class Registry: @unchecked Sendable {
         lock.lock()
         if let idx = projects.firstIndex(where: { $0.id == id }) {
             projects[idx].lastUsed = Date()
-            // "Hide until it is active again" — and this is what active means.
-            // Using Ouroboros here brings a project back; committing to it does
-            // not, or hiding would never survive a working afternoon.
+
             projects[idx].hidden = false
         }
         let snapshot = projects
@@ -109,8 +95,6 @@ public final class Registry: @unchecked Sendable {
         Zero.writeJSON(snapshot, to: file)
     }
 
-    /// Register a directory. Fills in name, base branch and a guessed verify
-    /// command so a freshly-added project is immediately usable.
     @discardableResult
     public func register(path rawPath: String, name: String? = nil,
                          policy: Policy? = nil) -> Project? {
@@ -133,19 +117,10 @@ public final class Registry: @unchecked Sendable {
             roadmapPath: Registry.findRoadmap(path),
             policy: policy ?? Policy()
         )
-        // Deliberately no `lastUsed`: adopting a directory is not using it.
-        // `touch()` sets it when you actually file something.
+
         return upsert(project)
     }
 
-    // MARK: - recency
-
-    /// When this repo last saw git activity.
-    ///
-    /// Deliberately a `stat`, not `git log -1`. With ~60 registered projects the
-    /// subprocess version costs a second or two and the capture panel has to
-    /// open instantly. `.git/logs/HEAD` is touched by every commit, checkout,
-    /// merge and rebase, so its mtime is the same signal for one syscall.
     public static func gitActivity(at path: String) -> Date? {
         let fm = FileManager.default
         let git = (path as NSString).appendingPathComponent(".git")
@@ -158,14 +133,10 @@ public final class Registry: @unchecked Sendable {
         return nil
     }
 
-    /// Projects you have actually pointed Ouroboros at, most recent first.
     public func recentlyUsed(limit: Int = 5) -> [Project] {
         Array(all().filter { $0.lastUsed != nil }.prefix(limit))
     }
 
-    /// Projects you have been *working in*, whether or not Ouroboros knows about
-    /// it yet. This is the half that makes the panel feel like it is paying
-    /// attention: the repo you committed to an hour ago is right there.
     public func recentlyTouchedByGit(limit: Int = 5, excluding: Set<String> = []) -> [Project] {
         all()
             .filter { !excluding.contains($0.id) }
@@ -178,7 +149,6 @@ public final class Registry: @unchecked Sendable {
             .map(\.0)
     }
 
-    /// Scan a parent directory (e.g. `~/dev`) for git repos, one level deep.
     public static func discover(in parent: String, limit: Int = 400) -> [String] {
         let fm = FileManager.default
         guard let names = try? fm.contentsOfDirectory(atPath: parent) else { return [] }
@@ -194,8 +164,6 @@ public final class Registry: @unchecked Sendable {
         }
         return found
     }
-
-    // MARK: helpers
 
     public static func normalize(_ path: String) -> String {
         var p = (path as NSString).expandingTildeInPath
@@ -221,8 +189,6 @@ public final class Registry: @unchecked Sendable {
         return root + "-x"
     }
 
-    /// One command that says whether the tree is healthy. Guessed from the
-    /// manifest files present; always user-overridable.
     public static func guessVerifyCommand(_ path: String) -> String? {
         let fm = FileManager.default
         func has(_ f: String) -> Bool {

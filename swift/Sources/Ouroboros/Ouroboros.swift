@@ -25,8 +25,6 @@ public struct Ouroboros: Sendable {
         store.write(title: title, body: body, screenshot: screenshot)
     }
 
-    /// Optionally create a worktree, then launch the agent with the seed prompt.
-    /// Returns false only when an isolated worktree was requested but could not be created.
     @discardableResult
     public func handToAgent(_ issue: Issue, options: FixOptions = FixOptions()) -> Bool {
         var cwd = projectDir

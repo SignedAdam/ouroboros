@@ -15,10 +15,7 @@ struct PanelView: View {
             Divider()
             capture
             Divider()
-            // Deliberately NOT a ScrollView: a MenuBarExtra window sizes itself
-            // to its content, so it offers a ScrollView no height at all and the
-            // whole body collapses to nothing. Cap the rows instead and let the
-            // window grow — a panel this size should never need scrolling.
+
             VStack(alignment: .leading, spacing: 0) {
                 if !model.inbox.isEmpty { inboxSection }
                 if !model.activeRuns.isEmpty { inFlightSection }
@@ -29,8 +26,6 @@ struct PanelView: View {
         }
         .frame(width: 400)
     }
-
-    // MARK: header
 
     private var header: some View {
         HStack(spacing: 8) {
@@ -50,8 +45,6 @@ struct PanelView: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
-
-    // MARK: capture
 
     private var capture: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -97,8 +90,6 @@ struct PanelView: View {
         .padding(.horizontal, 14).padding(.vertical, 11)
     }
 
-    // MARK: inbox
-
     private var inboxSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionTitle("needs you")
@@ -107,10 +98,6 @@ struct PanelView: View {
                     HStack(alignment: .top, spacing: 8) {
                         Circle().fill(item.tint).frame(width: 6, height: 6).padding(.top, 5)
                         VStack(alignment: .leading, spacing: 2) {
-                            // A merged item is a receipt, not a decision: it is
-                            // in the inbox so you can read it or undo it. Same
-                            // mark the drawer gives it — crossed off, greyed —
-                            // so "done" looks the same wherever you meet it.
                             Text(item.title)
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundStyle(item.kind == .merged
@@ -206,8 +193,6 @@ struct PanelView: View {
         replyText = ""
     }
 
-    // MARK: in flight
-
     private var inFlightSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             sectionTitle("in flight")
@@ -236,8 +221,6 @@ struct PanelView: View {
             }
         }
     }
-
-    // MARK: projects
 
     private var projectsSection: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -280,13 +263,8 @@ struct PanelView: View {
             .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 5)
     }
 
-    // MARK: footer
-
     private var footer: some View {
         HStack(spacing: 12) {
-            // The key the app is really listening on, not a hard-coded one: the
-            // configured combo is only a preference and any of them can be
-            // taken, so a literal here goes stale the first time a fallback wins.
             Text(HotkeyCombo.captureHint(active: HotkeyManager.current))
                 .font(.system(size: 10)).foregroundStyle(.secondary)
             Spacer()

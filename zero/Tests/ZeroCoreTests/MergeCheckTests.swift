@@ -1,11 +1,7 @@
 import XCTest
 @testable import ZeroCore
 
-/// A merge verdict is the one thing in this product that used to be asserted
-/// without being checked. These build real repositories and ask real git,
-/// because a merge test that is itself a guess would be the same bug again.
 final class MergeCheckTests: XCTestCase {
-
     private var root: String!
 
     override func setUpWithError() throws {
@@ -39,8 +35,6 @@ final class MergeCheckTests: XCTestCase {
     private func branch(_ name: String) { Git(root).run(["checkout", "-q", "-b", name]) }
     private func checkout(_ name: String) { Git(root).run(["checkout", "-q", name]) }
 
-    /// A branch that only touches its own file goes in, and the verdict says
-    /// which two commits that is true of.
     func testACleanBranchMerges() {
         branch("fix/clean")
         write("new.txt", "added by the branch\n")
@@ -57,8 +51,6 @@ final class MergeCheckTests: XCTestCase {
         XCTAssertNotEqual(verdict.baseSha, verdict.branchSha)
     }
 
-    /// Both sides edited the same lines. This is the case that used to be
-    /// rendered as `ready`.
     func testABranchThatConflictsNamesTheFiles() {
         branch("fix/conflict")
         write("shared.txt", "one\nBRANCH\nthree\n")
@@ -74,8 +66,6 @@ final class MergeCheckTests: XCTestCase {
         XCTAssertEqual(verdict.state, "conflicts")
     }
 
-    /// Only the files git could not resolve. A branch that also touched
-    /// something else must not have that listed as a conflict.
     func testOnlyTheConflictedFilesAreListed() {
         branch("fix/mixed")
         write("shared.txt", "one\nBRANCH\nthree\n")
@@ -91,8 +81,6 @@ final class MergeCheckTests: XCTestCase {
         XCTAssertFalse(verdict.conflicts.contains("other.txt"))
     }
 
-    /// Two people editing different parts of one file is not a conflict, and
-    /// calling it one would send someone to rebase for nothing.
     func testDisjointEditsToOneFileStillMerge() {
         write("long.txt", (1...40).map(String.init).joined(separator: "\n") + "\n")
         commit("a long file")
@@ -110,8 +98,6 @@ final class MergeCheckTests: XCTestCase {
         XCTAssertTrue(verdict.clean, "disjoint edits to one file are not a conflict")
     }
 
-    /// A branch already contained in the base has nothing to merge. Saying
-    /// "clean" is right, but only because it has already gone in.
     func testABranchAlreadyInTheBaseIsClean() {
         branch("fix/landed")
         write("new.txt", "x\n")
@@ -124,7 +110,6 @@ final class MergeCheckTests: XCTestCase {
         XCTAssertNil(verdict.error)
     }
 
-    /// "We could not tell" is a third answer, and it must never render as yes.
     func testAMissingBranchIsUnknownRatherThanClean() {
         let verdict = MergeChecks().verdict(repo: root, base: "main", branch: "fix/does-not-exist")
         XCTAssertNotNil(verdict.error)
@@ -132,8 +117,6 @@ final class MergeCheckTests: XCTestCase {
         XCTAssertEqual(verdict.state, "unknown")
     }
 
-    /// The verdict is about a pair of commits, and stops being about the repo
-    /// the moment either side moves.
     func testAVerdictOnlyDescribesThePairItTested() {
         branch("fix/pair")
         write("new.txt", "x\n")
@@ -144,7 +127,6 @@ final class MergeCheckTests: XCTestCase {
         let first = checks.verdict(repo: root, base: "main", branch: "fix/pair")
         XCTAssertTrue(first.describes(baseSha: first.baseSha, branchSha: first.branchSha))
 
-        // main moves. The old verdict is not wrong, it is about something else.
         write("other.txt", "moved on\n")
         commit("main moves")
         let second = checks.verdict(repo: root, base: "main", branch: "fix/pair")
@@ -153,8 +135,6 @@ final class MergeCheckTests: XCTestCase {
         XCTAssertNotEqual(first.key, second.key)
     }
 
-    /// The same pair asked twice is the same answer. This is what lets a row
-    /// render a merge verdict every frame without forking git.
     func testTheSamePairIsAnsweredFromCache() {
         branch("fix/cached")
         write("new.txt", "x\n")
@@ -168,7 +148,6 @@ final class MergeCheckTests: XCTestCase {
         XCTAssertEqual(first.checkedAt, second.checkedAt, "a cache hit does not re-run git")
     }
 
-    /// The verdict crosses the socket attached to a run.
     func testRoundTrip() throws {
         let verdict = MergeVerdict(base: "main", branch: "fix/x", baseSha: "aa", branchSha: "bb",
                                    clean: false, conflicts: ["a.swift", "b.swift"])
@@ -179,11 +158,7 @@ final class MergeCheckTests: XCTestCase {
     }
 }
 
-/// The parsing half, without a repository — the shapes `merge-tree` emits.
 final class MergeCheckParsingTests: XCTestCase {
-
-    /// Tree oid, then the paths, then a blank line, then git's prose — which
-    /// repeats every path and must not be read as more of them.
     func testConflictsStopAtTheBlankLine() {
         let output = """
         3d8a4c7b2d876fb9a96c6b4cb819762538434c7f

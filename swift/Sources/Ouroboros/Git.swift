@@ -29,8 +29,6 @@ public struct WorktreeManager: Sendable {
     let runner: GitRunner
     public init(runner: GitRunner = .live) { self.runner = runner }
 
-    /// Creates a worktree at <repo>/<worktreeRoot>/<slug> on a new branch <prefix><slug>
-    /// off `base`. Dedups branch+path with -2, -3 suffixes when the branch exists.
     public func create(repo: String, base: String, slug: String,
                        worktreeRoot: String = ".ouroboros/worktrees",
                        branchPrefix: String = "fix/") -> Worktree? {
@@ -42,7 +40,7 @@ public struct WorktreeManager: Sendable {
             if FileManager.default.fileExists(atPath: path) { continue }
             let result = runner.run(["worktree", "add", "-b", branch, path, base], repo)
             if result.status == 0 { return Worktree(path: path, branch: branch) }
-            // Only retry with the next suffix when the branch already exists; bail otherwise.
+
             if !result.output.lowercased().contains("already exists") { return nil }
         }
         return nil

@@ -1,16 +1,7 @@
 import Foundation
 import Ouroboros
 
-/// The seed prompt for a *supervised* run.
-///
-/// This differs from the engine's `seedPrompt` in one decisive way: the agent
-/// does not finish the job. It implements, commits on its branch, and stops.
-/// Ouroboros then runs the verification gate and only merges if the gate is
-/// green. The old prompt had the agent merge itself, which meant bad code was
-/// already on `main` by the time anyone could check — and it made "did this
-/// work?" unanswerable, because the evidence had been cleaned up.
 public enum SupervisedPrompt {
-
     public struct Context {
         public var title: String
         public var body: String
@@ -22,7 +13,7 @@ public enum SupervisedPrompt {
         public var resultPath: String
         public var protectedPaths: [String]
         public var extraContext: String?
-        /// Path to the installed toolbelt, when there is one.
+
         public var toolsPath: String?
 
         public init(title: String, body: String, issuePath: String? = nil, branch: String,
@@ -68,7 +59,6 @@ public enum SupervisedPrompt {
 
             You have a toolbelt on PATH. `\(tools)/TOOLS.md` is its complete spec, one
             line per tool, and it is the only thing you need to read to use them:
-
               list-windows      what is actually on screen right now (assertable)
               take-screenshot   save a screenshot of a display, region or window
               record-screen     record a region to mp4
@@ -91,7 +81,6 @@ public enum SupervisedPrompt {
         out += """
 
         How this run ends — follow it exactly:
-
         1. If the issue is NOT clearly actionable, do not guess and do not implement half of it.
            Write the result file described in step 4 with outcome "needs-input" and ONE specific
            question that would unblock you, then stop. Asking is a good outcome, not a failure.
@@ -110,7 +99,6 @@ public enum SupervisedPrompt {
         if !ctx.protectedPaths.isEmpty {
             out += """
 
-
         3. These paths are protected in this project and must NOT be edited:
            \(ctx.protectedPaths.joined(separator: ", "))
            If the fix genuinely requires touching one, stop with outcome "blocked" and say why.
@@ -118,7 +106,6 @@ public enum SupervisedPrompt {
         }
 
         out += """
-
 
         \(ctx.protectedPaths.isEmpty ? "3" : "4"). Commit your work on `\(ctx.branch)` with a clear message.
            Then STOP. Specifically, do NOT:
@@ -129,11 +116,9 @@ public enum SupervisedPrompt {
            is what makes the work reviewable and reversible.
 
         \(ctx.protectedPaths.isEmpty ? "4" : "5"). Last thing before you exit, write this file:
-
            \(ctx.resultPath)
 
            containing exactly one JSON object:
-
            {"outcome": "done", "summary": "<1-2 sentences, past tense, what you changed>", \
         "filesChanged": ["path/one", "path/two"]}
 
@@ -146,9 +131,6 @@ public enum SupervisedPrompt {
         return out
     }
 
-    /// Re-dispatch after a human answered the agent's question. The original
-    /// prompt is replayed verbatim so the second agent starts from the same
-    /// place, with the answer appended.
     public static func reply(original: String, question: String?, answer: String,
                              resultPath: String) -> String {
         var out = original
@@ -159,7 +141,6 @@ public enum SupervisedPrompt {
         out += """
 
         The human answered:
-
         \(answer)
 
         Continue from there and finish the job under the same rules as above. Write your result
@@ -168,13 +149,6 @@ public enum SupervisedPrompt {
         return out
     }
 
-    /// What a `resolve` run is told.
-    ///
-    /// The whole reason this is a resume and not a fresh dispatch is that the
-    /// agent already knows why it wrote those lines. So this says as little as
-    /// possible about the work and everything about the situation: which two
-    /// commits stopped agreeing, which files, and what it is allowed to decide
-    /// on its own.
     public struct ConflictContext {
         public var branch: String
         public var base: String
@@ -183,11 +157,9 @@ public enum SupervisedPrompt {
         public var files: [String]
         public var resultPath: String
         public var verifyCmd: String?
-        /// The issue this branch was about. Sent only to a fresh agent — the
-        /// one being resumed wrote it and does not need it read back.
+
         public var issue: String?
-        /// The conversation could not be reopened, so this is a different agent
-        /// picking up somebody else's branch. It has to be told that.
+
         public var fresh: Bool
 
         public init(branch: String, base: String, branchSha: String, baseSha: String,
@@ -276,11 +248,9 @@ public enum SupervisedPrompt {
         that merges; you never perform the merge.
 
         Last thing before you exit, write this file:
-
            \(ctx.resultPath)
 
            containing exactly one JSON object:
-
            {"outcome": "done", "summary": "<1-2 sentences, past tense, how you resolved it>", \
         "filesChanged": ["path/one"]}
 
@@ -291,9 +261,6 @@ public enum SupervisedPrompt {
         return out
     }
 
-    /// A `## Resolution` section, appended to the issue file by Ouroboros using
-    /// the agent's own summary — deterministic, and it happens even when the
-    /// agent forgot.
     public static func resolutionSection(summary: String?, branch: String?, merged: String?,
                                          at date: Date = Date()) -> String {
         let formatter = DateFormatter()

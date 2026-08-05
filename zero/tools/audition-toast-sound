@@ -26,9 +26,6 @@ exec(compile(_src, "make-toast-sound", "exec"), mts.__dict__)
 
 OUT = os.path.join(HERE, "..", "Sources", "ZeroApp", "Resources", "reference")
 
-# Chosen to span the axes that actually change how it reads, rather than to
-# crowd around one idea. Direction of the sweep first, because a falling chirp
-# and a rising one are different sounds, not different settings.
 CANDIDATES = [
     ("rise-tight",   "rising, chirps close together (the current one)", {}),
     ("fall-tight",   "falling — blip rather than bird",                 dict(sweep=0.62)),
@@ -44,14 +41,12 @@ CANDIDATES = [
     ("unison",       "both chirps at the same pitch",                   dict(interval=1.0, sweep=0.62)),
 ]
 
-
 def build(name, overrides):
     values = dict(mts.DEFAULTS)
     values.update(overrides)
     path = os.path.join(OUT, f"toast-{name}.wav")
     mts.write(path, mts.render(types.SimpleNamespace(**values)))
     return path
-
 
 def main():
     ap = argparse.ArgumentParser()
@@ -81,7 +76,6 @@ def main():
         subprocess.run(["afplay", path])
         time.sleep(0.55)
     print(f"\n  replay one:  audition-toast-sound --loop <n>\n")
-
 
 if __name__ == "__main__":
     main()

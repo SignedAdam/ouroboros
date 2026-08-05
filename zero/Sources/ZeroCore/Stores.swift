@@ -2,12 +2,6 @@ import Foundation
 import CryptoKit
 import Ouroboros
 
-// MARK: - Issues
-
-/// Issues across every registered project. This is a *view*, not a store: it
-/// reads the same `.issues/**.md` files the engine writes, so an issue filed by
-/// the in-app composer in Atlas and one filed by `ouro i` are the same object,
-/// and deleting `~/.ouroboros` loses nothing.
 public struct IssueService: Sendable {
     public let registry: Registry
     public init(registry: Registry) { self.registry = registry }
@@ -16,8 +10,6 @@ public struct IssueService: Sendable {
         IssueStore(rootDir: project.path)
     }
 
-    /// Stable, URL-safe, and derived purely from the file path — the same issue
-    /// keeps its id across daemon restarts without an id column anywhere.
     public static func id(project: Project, path: String) -> String {
         let digest = SHA256.hash(data: Data(path.utf8))
         let hex = digest.map { String(format: "%02x", $0) }.joined()
@@ -98,19 +90,12 @@ public struct IssueService: Sendable {
         return IssueService.dto(updated, project: project)
     }
 
-    /// Append text to an issue file's body — how the `## Resolution` section
-    /// lands without rewriting anything the human wrote.
     @discardableResult
     public func append(project: Project, issue: Issue, text: String) -> IssueDTO? {
         updateBody(project: project, issue: issue, body: issue.body + text)
     }
 }
 
-// MARK: - Ideas
-
-/// Ideas are issues without a home yet, so they get the same storage: markdown
-/// with frontmatter, status as folder. Promoting one is a file move plus a
-/// rewrite into the project's own `.issues/new/`.
 public struct IdeaStore: Sendable {
     public let root: String
     private var store: IssueStore { IssueStore(rootDir: root, subdir: "new") }
@@ -129,8 +114,7 @@ public struct IdeaStore: Sendable {
         let path = issue.path ?? ""
         var projectId: String?
         var body = issue.body
-        // A `project: <id>` first line is how an idea remembers where it belongs
-        // without needing a sidecar database.
+
         if let first = body.components(separatedBy: "\n").first,
            first.lowercased().hasPrefix("project:") {
             projectId = String(first.dropFirst(8)).trimmingCharacters(in: .whitespaces)
@@ -169,9 +153,6 @@ public struct IdeaStore: Sendable {
         return toIdea(issue)
     }
 
-    /// Mark an idea as spent once it becomes a real issue. The file stays, in
-    /// `done/` — the trail from "half a thought at midnight" to "shipped" is
-    /// worth more than a tidy directory.
     @discardableResult
     public func retire(_ issue: Issue) -> Bool {
         store.setStatus(issue, .done) != nil
@@ -182,8 +163,6 @@ public struct IdeaStore: Sendable {
         store.setStatus(issue, .cancelled) != nil
     }
 }
-
-// MARK: - Proposals
 
 public final class ProposalStore: @unchecked Sendable {
     private let lock = NSLock()
@@ -213,9 +192,6 @@ public final class ProposalStore: @unchecked Sendable {
         return matches.count == 1 ? matches.first : nil
     }
 
-    /// Returns the existing proposal when `dedupeKey` already has one pending.
-    /// A screen-watching operator will notice the same misaligned button forty
-    /// times an hour; without this the inbox is landfill by lunch.
     public func upsert(_ proposal: Proposal) -> (Proposal, Bool) {
         lock.lock(); defer { lock.unlock() }
         if let existing = all().first(where: {

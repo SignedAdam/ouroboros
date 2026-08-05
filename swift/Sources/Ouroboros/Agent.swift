@@ -4,7 +4,7 @@ public struct AgentInvocation: Sendable, Equatable {
     public let argv: [String]
     public let cwd: String
     public let label: String
-    /// Human-readable issue title, for display in launch UIs (cinema window banner).
+
     public let title: String
     public init(argv: [String], cwd: String, label: String, title: String = "") {
         self.argv = argv
@@ -26,7 +26,7 @@ public struct FixOptions: Sendable, Equatable {
 
 public struct Agent: Sendable {
     public let name: String
-    public let template: [String]   // a "{prompt}" token is replaced with the seed prompt
+    public let template: [String]
     public init(name: String, template: [String]) {
         self.name = name
         self.template = template

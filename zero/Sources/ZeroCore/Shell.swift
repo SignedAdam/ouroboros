@@ -8,9 +8,6 @@ public struct ShellResult: Sendable {
 }
 
 public enum Shell {
-    /// Run a command, capture stdout+stderr. `login: true` goes through `zsh -lc`
-    /// so Homebrew's PATH resolves — the menu-bar app is Finder-launched and does
-    /// not inherit the user's shell environment otherwise.
     @discardableResult
     public static func run(_ argv: [String], cwd: String? = nil, login: Bool = false,
                            env: [String: String]? = nil,
@@ -39,8 +36,6 @@ public enum Shell {
             return ShellResult(status: 127, output: "\(error)")
         }
 
-        // Drain on a background thread: a build that writes more than the pipe
-        // buffer deadlocks if we wait first and read after.
         let lock = NSLock()
         var collected = Data()
         let done = DispatchSemaphore(value: 0)
@@ -71,8 +66,6 @@ public enum Shell {
         return ShellResult(status: process.terminationStatus, output: out)
     }
 
-    /// Run a shell command line (as the user would type it) — for `verifyCmd`,
-    /// which is a string like `swift build 2>&1`, not an argv.
     @discardableResult
     public static func runLine(_ line: String, cwd: String? = nil,
                                timeout: TimeInterval? = nil) -> ShellResult {
@@ -94,8 +87,6 @@ public enum Shell {
     }
 }
 
-/// Thin git helpers on top of `Shell`. The engine's `WorktreeManager` still owns
-/// worktree creation; this is everything else Zero needs to reason about a repo.
 public struct Git {
     public let repo: String
     public init(_ repo: String) { self.repo = repo }
@@ -121,29 +112,17 @@ public struct Git {
         return r.ok && r.trimmed.isEmpty
     }
 
-    /// Merge-safety, which is not the same thing as cleanliness.
-    ///
-    /// Untracked files — build output, `__pycache__`, scratch notes — cannot
-    /// break a merge: git refuses on its own if one would be overwritten, and
-    /// that failure path is handled. Only modified *tracked* files are a real
-    /// reason to hold off. Being stricter than git here sounds safe but means
-    /// auto-merge never fires on a working developer's machine, which is worse:
-    /// the feature quietly stops existing.
-    ///
-    /// `.issues/` and `.ouroboros/` are excluded either way — Ouroboros dirties
-    /// those itself, and refusing to merge because of the very issue being
-    /// fixed would be absurd.
     public func hasUncommittedTrackedChanges() -> Bool {
         let r = run(["status", "--porcelain"], timeout: 20)
-        guard r.ok else { return true }   // can't tell → touch nothing
+        guard r.ok else { return true }
         for line in r.output.split(separator: "\n", omittingEmptySubsequences: true) {
             let entry = String(line)
             guard entry.count > 3 else { continue }
             let code = entry.prefix(2)
-            if code == "??" || code == "!!" { continue }   // untracked / ignored
+            if code == "??" || code == "!!" { continue }
             var path = String(entry.dropFirst(3))
             if path.hasPrefix("\"") { path = String(path.dropFirst().dropLast()) }
-            if let arrow = path.range(of: " -> ") {        // renames
+            if let arrow = path.range(of: " -> ") {
                 path = String(path[arrow.upperBound...])
             }
             if path.hasPrefix(".issues/") || path.hasPrefix(".ouroboros/") { continue }
@@ -182,9 +161,6 @@ public struct Git {
         !run(["remote"], timeout: 10).trimmed.isEmpty
     }
 
-    /// Local branches, most recently committed to first — the order anyone
-    /// picking one wants them in. Ouroboros's own `fix/…` branches are left
-    /// out: they are the output of the machine, never a base to dispatch onto.
     public var localBranches: [String] {
         let r = run(["for-each-ref", "--sort=-committerdate",
                      "--format=%(refname:short)", "refs/heads/"], timeout: 20)
@@ -194,9 +170,6 @@ public struct Git {
             .filter { !$0.isEmpty && !$0.hasPrefix("fix/") }
     }
 
-    /// Put `branch` back on top of `base`, in a worktree that already has it
-    /// checked out. Non-interactive, and it cleans up after itself: a rebase
-    /// left half-applied is worse than one that never started.
     public func rebase(branch: String, onto base: String) -> (ok: Bool, message: String) {
         let checkout = run(["checkout", branch], timeout: 60)
         guard checkout.ok else {
@@ -210,7 +183,6 @@ public struct Git {
         return (true, "rebased \(branch) onto \(base)")
     }
 
-    /// Walk up from `path` to the enclosing work tree root.
     public static func repoRoot(containing path: String) -> String? {
         let r = Shell.run(["git", "rev-parse", "--show-toplevel"], cwd: path, timeout: 10)
         guard r.ok else { return nil }

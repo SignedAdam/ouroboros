@@ -1,5 +1,4 @@
 #!/bin/zsh
-# Screenshot. Default is the built-in display, which is almost always what you want.
 set -e
 OUT=""; ARGS=(-x)
 while [[ $# -gt 0 ]]; do

@@ -3,13 +3,7 @@ import Foundation
 import Carbon.HIToolbox
 @testable import ZeroCore
 
-// The hotkey is the app's front door: it is read from config.json, written by
-// /hotkey, and registered once at launch. Every failure mode here is silent —
-// a combo that no longer parses just falls through to a fallback, and the key
-// the user configured quietly stops working.
-
 final class HotkeyParseTests: XCTestCase {
-
     func testTheTwoCombosTheAppShipsWith() {
         let opt = HotkeyCombo.parse("opt+space")
         XCTAssertEqual(opt?.keyCode, UInt32(kVK_Space))
@@ -69,8 +63,6 @@ final class HotkeyParseTests: XCTestCase {
     }
 
     func testABareKeyIsRefused() {
-        // A global hotkey with no modifier would swallow that key everywhere on
-        // the machine — including inside the app the user is typing in.
         XCTAssertNil(HotkeyCombo.parse("space"))
         XCTAssertNil(HotkeyCombo.parse("k"))
         XCTAssertNil(HotkeyCombo.parse(""))
@@ -85,14 +77,11 @@ final class HotkeyParseTests: XCTestCase {
     }
 
     func testTheLastKeyWins() {
-        // Two key names is user error; taking the last one keeps parsing total
-        // instead of failing into a fallback combo.
         XCTAssertEqual(HotkeyCombo.parse("opt+a+b")?.keyCode, UInt32(kVK_ANSI_B))
     }
 }
 
 final class HotkeyDescribeTests: XCTestCase {
-
     func testRendersInTheOrderMacOSWritesModifiers() {
         XCTAssertEqual(HotkeyCombo.describe("opt+space"), "⌥Space")
         XCTAssertEqual(HotkeyCombo.describe("cmd+shift+space"), "⇧⌘Space")
@@ -115,8 +104,6 @@ final class HotkeyDescribeTests: XCTestCase {
     }
 
     func testNonsenseIsEchoedBackRatherThanHidden() {
-        // The footer shows whatever is configured; a combo that cannot be
-        // rendered is still better shown than blanked out.
         XCTAssertEqual(HotkeyCombo.describe("banana"), "banana")
         XCTAssertEqual(HotkeyCombo.describe(""), "")
     }
@@ -131,7 +118,6 @@ final class HotkeyDescribeTests: XCTestCase {
 }
 
 final class HotkeyCaptureHintTests: XCTestCase {
-
     func testTheHintNamesTheComboThatRegistered() {
         XCTAssertEqual(HotkeyCombo.captureHint(active: "opt+space"),
                        "⌥Space to capture anywhere")
@@ -140,15 +126,11 @@ final class HotkeyCaptureHintTests: XCTestCase {
     }
 
     func testNoRegisteredComboIsSaidRatherThanGuessed() {
-        // Every combo in the chain was taken: there is no key to advertise, and
-        // the panel is itself the way in.
         XCTAssertEqual(HotkeyCombo.captureHint(active: nil), "no capture hotkey — use this menu")
         XCTAssertEqual(HotkeyCombo.captureHint(active: "  "), "no capture hotkey — use this menu")
     }
 
     func testTheHintNeverHardCodesOneCombo() {
-        // The bug this replaced: a literal in the panel footer that kept saying
-        // ⌥⌘I long after the default became ⌥Space.
         for combo in HotkeyCombo.fallbacks {
             XCTAssertTrue(HotkeyCombo.captureHint(active: combo)
                             .hasPrefix(HotkeyCombo.describe(combo)),
@@ -158,7 +140,6 @@ final class HotkeyCaptureHintTests: XCTestCase {
 }
 
 final class HotkeyNameTests: XCTestCase {
-
     func testCodeAndMaskRoundTripToText() {
         for combo in ["opt+space", "shift+cmd+space", "ctrl+opt+shift+cmd+k", "opt+7"] {
             let parsed = HotkeyCombo.parse(combo)
@@ -181,7 +162,6 @@ final class HotkeyNameTests: XCTestCase {
 }
 
 final class HotkeyChainTests: XCTestCase {
-
     func testWithNoPreferenceItIsJustTheFallbacks() {
         XCTAssertEqual(HotkeyCombo.chain(preferred: nil), HotkeyCombo.fallbacks)
         XCTAssertEqual(HotkeyCombo.chain(preferred: ""), HotkeyCombo.fallbacks)
@@ -202,7 +182,6 @@ final class HotkeyChainTests: XCTestCase {
     }
 
     func testUnparseableConfigStillLeavesAWorkingKey() {
-        // A typo in config.json must not cost the user the hotkey entirely.
         let chain = HotkeyCombo.chain(preferred: "banana")
         XCTAssertEqual(chain.first, "banana")
         XCTAssertTrue(chain.dropFirst().allSatisfy { HotkeyCombo.parse($0) != nil })

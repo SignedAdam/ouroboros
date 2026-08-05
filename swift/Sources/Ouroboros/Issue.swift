@@ -24,7 +24,6 @@ public enum IssueText {
     public static let nameMaxWords = 9
     public static let nameMaxChars = 60
 
-    /// Collapse whitespace, replace path separators, trim spaces/dots.
     public static func cleanTitle(_ raw: String) -> String {
         let collapsed = raw.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
         let replaced = collapsed.replacingOccurrences(of: "/", with: "-")
@@ -32,7 +31,6 @@ public enum IssueText {
         return replaced.trimmingCharacters(in: CharacterSet(charactersIn: " ."))
     }
 
-    /// First non-empty line → first 9 words / 60 chars, cleaned. Empty in → empty out.
     public static func suggestTitle(_ body: String) -> String {
         let firstLine = body.split(separator: "\n", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -51,7 +49,6 @@ public enum IssueText {
         return cleanTitle(name)
     }
 
-    /// Lowercase, non-alphanumerics → '-', strip leading/trailing '-', cap 40, fallback "issue".
     public static func slugify(_ title: String) -> String {
         var out = ""
         var lastDash = false

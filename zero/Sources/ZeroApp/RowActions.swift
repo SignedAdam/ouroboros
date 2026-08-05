@@ -2,22 +2,8 @@ import SwiftUI
 import AppKit
 import ZeroCore
 
-/// The verbs behind every row in the drawer.
-///
-/// Every object on screen has the same small, predictable set of verbs, reached
-/// the same two ways — right-click for all of them, hover for the one or two you
-/// want most often. Every verb is an API call: nothing in this file knows how to
-/// move a file or run git, it asks the daemon exactly as `ouro` does.
-///
-/// Every verb also goes through `model.perform(_:_:)` with a `RowVerb`, which is
-/// the single place that decides whether the panel closes behind it, and
-/// `WorkState.verbs` is the single place that decides which ones a row offers.
-/// Both are tables with tests, rather than a decision taken again per menu item.
 @MainActor
 enum RowActions {
-
-    // MARK: projects
-
     @ViewBuilder
     static func projectMenu(_ project: Project, model: AppModel) -> some View {
         Button("Capture into \(project.name)") {
@@ -30,8 +16,7 @@ enum RowActions {
                 model.note(project.favourite ? "unpinned" : "kept at the top")
             }
         }
-        // "Until active again" is the whole contract, so the menu says it rather
-        // than leaving you to find out that hiding is not forgetting.
+
         Button("Hide until active again") {
             model.perform(.hide) { model.hideProject(project.id) }
         }
@@ -73,10 +58,6 @@ enum RowActions {
         }
     }
 
-    // MARK: work
-
-    /// One menu for every state, because to the person who typed the sentence
-    /// there is one object here, not an issue and a run.
     @ViewBuilder
     static func issueMenu(_ pip: IssuePip, model: AppModel) -> some View {
         if pip.canResume, let runId = pip.runId {
@@ -90,10 +71,7 @@ enum RowActions {
             }
         }
         Divider()
-        // The same table the hover verbs read, minus the one already spelled
-        // out above it. The menu and the row cannot offer different things, and
-        // in particular neither can offer a merge on a branch the state already
-        // knows will not go in.
+
         ForEach(menuVerbs(pip), id: \.self) { verb in
             Button(menuTitle(verb, pip: pip)) { run(verb, pip: pip, model: model) }
         }
@@ -111,21 +89,15 @@ enum RowActions {
             model.perform(.copyTitle) { copy(pip.title); model.note("copied the title") }
         }
         if pip.path != nil {
-            // Stays open, and the row goes on screen. Deleting one issue is
-            // nearly always the middle of a tidy-up, not the end of what you
-            // came to do.
             Button("Delete") { model.perform(.delete) { model.deleteIssue(pip.id) } }
         }
     }
 
-    /// The state's verbs, minus anything this pip has nothing to act on, plus
-    /// the diff when the branch has one and the state did not think to offer it.
     static func menuVerbs(_ pip: IssuePip) -> [RowVerb] {
         var verbs = pip.state.verbs.filter { verb in
             switch verb {
             case .markDone: return pip.path != nil
-            // `fix` is already the "Start" submenu above, which additionally
-            // lets you name the harness.
+
             case .fix:      return false
             default:        return pip.runId != nil
             }
@@ -134,7 +106,6 @@ enum RowActions {
         return verbs
     }
 
-    /// A menu item is a sentence; a button on a row is a word. Same verb.
     static func menuTitle(_ verb: RowVerb, pip: IssuePip) -> String {
         switch verb {
         case .fix:       return pip.runId == nil ? "Fix it" : "Fix it again"
@@ -153,8 +124,6 @@ enum RowActions {
         }
     }
 
-    /// One place where a verb becomes a call. The hover buttons and the context
-    /// menu both come through here, so they cannot drift apart.
     static func run(_ verb: RowVerb, pip: IssuePip, model: AppModel) {
         model.perform(verb) {
             switch verb {
@@ -192,19 +161,9 @@ enum RowActions {
     }
 }
 
-/// The exit a row plays when a verb removes it.
-///
-/// Deleting used to be invisible: the row was there, and then a poll came back
-/// up to two seconds later without it, with nothing on screen connecting the
-/// click to the change. Here they are the same event — an orange line strikes
-/// through the row, then the row folds up and takes its own height with it, so
-/// the drawer closes the gap instead of jumping.
 struct VanishingRow: ViewModifier {
     let leaving: Bool
 
-    /// The row's natural height, so folding has something to animate down
-    /// *from*. Measured while the row is alive and left alone once it starts
-    /// leaving, or the height we impose would feed back into the measurement.
     @State private var natural: CGFloat?
     @State private var struck = false
     @State private var folded = false
@@ -218,12 +177,11 @@ struct VanishingRow: ViewModifier {
             .offset(x: folded ? -7 : 0)
             .overlay(alignment: .leading) { cut }
             .background(ruler)
-            // Unconstrained until it is going: a project row changes height when
-            // you select it, and pinning that would break the row opening.
+
             .frame(height: leaving ? (folded ? 0 : natural) : nil, alignment: .top)
             .opacity(folded ? 0 : 1)
             .clipped()
-            // A row on its way out must not answer a second click.
+
             .allowsHitTesting(!leaving)
             .onChange(of: leaving) { _, isLeaving in
                 guard isLeaving else { return }
@@ -231,14 +189,10 @@ struct VanishingRow: ViewModifier {
                 withAnimation(.easeIn(duration: VanishingRow.fold)
                     .delay(VanishingRow.strike)) { folded = true }
             }
-            // Rebuilt mid-exit — the project was collapsed and reopened — the
-            // row arrives already gone rather than flashing back into place.
+
             .onAppear { if leaving { struck = true; folded = true } }
     }
 
-    /// The cut itself: one hairline, drawn from the leading edge outwards and
-    /// fading as it goes, so it reads as a stroke through the row rather than
-    /// as a rule under it.
     private var cut: some View {
         Rectangle()
             .fill(LinearGradient(colors: [ouroOrange, ouroOrange.opacity(0.15)],
@@ -260,19 +214,11 @@ struct VanishingRow: ViewModifier {
 }
 
 extension View {
-    /// See `VanishingRow`.
     func vanishing(_ leaving: Bool) -> some View {
         modifier(VanishingRow(leaving: leaving))
     }
 }
 
-/// What state a piece of work is in, as a mark rather than a bullet.
-///
-/// This list used to open every row with the same small circle — an unordered
-/// list, carrying a colour and nothing else, in a panel where every other mark
-/// means something. These are seven marks for seven situations, so the shape
-/// says what happened before the word on the right does, and the two states
-/// that are genuinely alive are the two that move.
 struct WorkGlyph: View {
     let state: WorkState
 
@@ -284,30 +230,23 @@ struct WorkGlyph: View {
             case .running:   spinner
             case .asking:    halo
             case .review:    target
-            // Not a milder review: the branch has been tested against its base
-            // and it does not go in. Drawn as the thing standing in the way.
+
             case .conflicts: symbol("exclamationmark", weight: .heavy, fade: 1)
-            // Spent. The same ring as `filed` — an empty seat, because there is
-            // nothing inside the branch — but greyer, since nothing is expected
-            // of it either.
+
             case .obsolete:  ring(Color.primary.opacity(0.22))
             case .merged:    symbol("checkmark", weight: .bold, fade: 0.7)
             case .failed:    symbol("xmark", weight: .heavy, fade: 1)
             case .stopped:   symbol("minus", weight: .bold, fade: 0.8)
             }
         }
-        // One box for every state, so nine different marks leave the titles
-        // beside them on a single line.
+
         .frame(width: 9, height: 9)
     }
 
-    /// Nobody has been dispatched. An outline is an empty seat.
     private func ring(_ tint: Color) -> some View {
         Circle().strokeBorder(tint, lineWidth: 1).frame(width: 6.5, height: 6.5)
     }
 
-    /// A gap in a circle, turning. Nothing else in the panel says "right now"
-    /// as immediately as something that moves.
     private var spinner: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { context in
             Circle()
@@ -318,8 +257,6 @@ struct WorkGlyph: View {
         }
     }
 
-    /// The agent stopped and asked something: the one state where nothing at
-    /// all happens until you answer, so it is the one that pushes outward.
     private var halo: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 12.0)) { context in
             let phase = 0.5 + 0.5 * sin(context.date.timeIntervalSinceReferenceDate * 2.6)
@@ -332,8 +269,6 @@ struct WorkGlyph: View {
         }
     }
 
-    /// Verified, on its branch, waiting for permission to land. Drawn as
-    /// something to aim at, because the next move is yours.
     private var target: some View {
         ZStack {
             Circle().strokeBorder(state.tint.opacity(0.5), lineWidth: 1)
@@ -349,16 +284,9 @@ struct WorkGlyph: View {
     }
 }
 
-/// One piece of work, as a row you can act on.
-///
-/// Reads without hovering: a mark says how it is going, the title says what it
-/// is, the right edge names the state. Hovering adds the verbs for that state
-/// and nothing else — which ones is `WorkState.verbs`, one table with a test,
-/// so the same sentence never offers `merge` in one place and not in another.
 struct IssueRow: View {
     let pip: IssuePip
-    /// Set only in the needs-you group, where the rows come from every project
-    /// at once and the row has to say which one it is from.
+
     var project: String?
 
     @EnvironmentObject var model: AppModel
@@ -419,18 +347,12 @@ struct IssueRow: View {
         .vanishing(leaving)
     }
 
-    /// Merged work reads as done: struck through, and grey rather than the
-    /// weight every other row's title wears. It still lifts under the pointer,
-    /// because "finished" is not "unreadable" — undo is on its menu, and you
-    /// have to be able to read the line you are about to undo.
     private var titleTint: Color {
         let lit = hovering && !leaving
         if pip.state == .merged { return Color.primary.opacity(lit ? 0.55 : 0.38) }
         return lit ? Color.primary : Color.primary.opacity(0.72)
     }
 
-    /// The verbs for this row's state, two or three of them, and nothing that
-    /// has nothing to act on. Everything else is a right-click away.
     @ViewBuilder
     private var verbs: some View {
         HStack(spacing: 2) {
@@ -443,8 +365,6 @@ struct IssueRow: View {
         .padding(.trailing, 1)
     }
 
-    /// The table, minus anything this particular row cannot do: a pip with no
-    /// run has nothing to watch, and one with no file cannot be marked done.
     private var offered: [RowVerb] {
         pip.state.verbs.filter { verb in
             switch verb {
@@ -455,8 +375,6 @@ struct IssueRow: View {
         }
     }
 
-    /// The one line the button does not have room to say. Never information the
-    /// row should have shown — only what happens next.
     private func hint(for verb: RowVerb) -> String {
         switch verb {
         case .fix:       return pip.canResume ? "reopen this in \(pip.agent)"
@@ -477,11 +395,6 @@ struct IssueRow: View {
     }
 }
 
-/// A verb on a row: a glyph, a word, a background under the pointer.
-///
-/// Low contrast until you are on it, and the background is the only thing that
-/// changes. Nothing here reads a hover flag for a size — a row whose text grows
-/// under the cursor shifts every glyph after it, which was the complaint.
 private struct VerbButton: View {
     let verb: RowVerb
     let hint: String
@@ -498,9 +411,7 @@ private struct VerbButton: View {
                     .font(.system(size: 9, weight: .semibold))
             }
             .foregroundStyle(tint)
-            // A real target. A bare 8pt glyph is a thing you miss, and a miss on
-            // this panel drags the window, because the capture box is movable by
-            // its background.
+
             .padding(.horizontal, 5)
             .padding(.vertical, 3)
             .background(RoundedRectangle(cornerRadius: 4, style: .continuous)
@@ -514,13 +425,8 @@ private struct VerbButton: View {
         .help(hint)
     }
 
-    /// Orange for the verb that starts work, the state's own colour for the one
-    /// that finishes it, grey for everything else — so the row's loudest button
-    /// is the one you most likely came for.
     private var tint: Color {
         switch verb {
-        // `resolve` starts an agent, exactly as `fix` does, and it is the one
-        // verb on a conflicting row that ends the situation.
         case .fix, .retry, .reply, .resolve: return ouroOrange
         case .merge:               return WorkState.merged.tint
         case .rebase:              return WorkState.conflicts.tint

@@ -1,11 +1,6 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-// Ouroboros Zero — the global control plane. One core (ZeroCore), three faces:
-// the daemon (ourod), the CLI (ouro), and the menu-bar app (ouroboros-zero).
-// The engine (issue files, worktrees, seed prompts, terminal launching) is the
-// existing Ouroboros package next door — Zero never reimplements it.
-
 let package = Package(
     name: "OuroborosZero",
     platforms: [.macOS(.v14)],

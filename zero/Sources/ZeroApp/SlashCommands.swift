@@ -2,14 +2,6 @@ import SwiftUI
 import AppKit
 import ZeroCore
 
-// The command table, the matcher and the tokenizer live in ZeroCore
-// (`Sources/ZeroCore/SlashCommands.swift`) — none of it is UI, and the daemon,
-// the CLI and the tests read the same grammar the panel does. What stays here is
-// everything that needs an app: the runner that performs a command, the palette
-// that draws the table, and the wizard sheet.
-
-// MARK: - wizard requests
-
 struct WizardRequest: Identifiable {
     enum Kind { case add, new }
     let id = UUID()
@@ -17,23 +9,14 @@ struct WizardRequest: Identifiable {
     let prefill: String?
 }
 
-// MARK: - the runner
-
 @MainActor
 final class SlashRunner: ObservableObject {
-    /// Short result line for the last command. Mirrored into `model.status` so
-    /// the panel, the quick-capture window and the wizard sheet all speak
-    /// through one channel no matter which of them did the work.
     @Published var status: String?
-    /// Set when a command needs more than a line of text; the panel presents it
-    /// as a sheet and clears it when the sheet closes.
+
     @Published var wizard: WizardRequest?
-    /// True while a command is in flight. `/update` pulls, builds and reinstalls
-    /// — minutes, during which the panel used to sit there saying nothing, which
-    /// is indistinguishable from having done nothing.
+
     @Published var working = false
-    /// When the in-flight command started, so the panel can show it ticking.
-    /// A number that moves is the difference between "busy" and "hung".
+
     @Published var startedAt: Date?
 
     private let model: AppModel
@@ -42,11 +25,6 @@ final class SlashRunner: ObservableObject {
         self.model = model
     }
 
-    /// Returns true when the input was a slash command and has been handled.
-    /// Sets `status` to a short result line, or `wizard` to request a sheet.
-    ///
-    /// Anything that does not resolve to a known command comes back false and is
-    /// filed as an ordinary issue — "/tmp is full" is a bug report, not a typo.
     func run(_ input: String) async -> Bool {
         guard let parsed = SlashCommands.parse(input) else { return false }
         working = true
@@ -100,16 +78,13 @@ final class SlashRunner: ObservableObject {
         }
     }
 
-    // MARK: projects
-
     private func addProject(_ rawPath: String) async {
         guard !rawPath.isEmpty else {
             wizard = WizardRequest(kind: .add, prefill: nil)
             return
         }
         let expanded = (rawPath as NSString).expandingTildeInPath
-        // The directory names itself, exactly as it is spelled on disk: /dev/Acme
-        // is "Acme". Only trailing slashes are noise.
+
         let name = SlashCommands.projectName(forPath: expanded)
         let path = Registry.normalize(expanded)
         guard isDirectory(path) else {
@@ -128,8 +103,7 @@ final class SlashRunner: ObservableObject {
             wizard = WizardRequest(kind: .new, prefill: nil)
             return
         }
-        // A second word is never part of a directory name, so it is the thing the
-        // project is — which is exactly what the roadmap prompt wants anyway.
+
         let description = args.dropFirst().joined(separator: " ")
         report("scaffolding \(name)…")
         let reply = await Wire.post("/v1/projects/create",
@@ -187,8 +161,6 @@ final class SlashRunner: ObservableObject {
         model.refresh()
     }
 
-    // MARK: per-project policy
-
     private func setVerify(_ command: String) async {
         guard let project = requireProject() else { return }
         guard !command.isEmpty else {
@@ -237,8 +209,6 @@ final class SlashRunner: ObservableObject {
         guard let updated = await patch(project, API.PatchProject(finishDefault: raw.lowercased())) else { return }
         report("\(updated.name) finishes with \(updated.policy.finishDefault.rawValue)")
     }
-
-    // MARK: work
 
     private func dispatchFix(_ rawId: String) async {
         var issueId = rawId
@@ -302,13 +272,10 @@ final class SlashRunner: ObservableObject {
         model.refresh()
     }
 
-    // MARK: run actions
-
     private func replyToRun(_ args: [String]) async {
         var runId = ""
         var words = args
-        // Run ids always start with "r-", so the id is optional without the
-        // answer ever being mistaken for one.
+
         if let first = args.first, first.hasPrefix("r-") {
             runId = first
             words = Array(args.dropFirst())
@@ -367,8 +334,6 @@ final class SlashRunner: ObservableObject {
         model.refresh()
     }
 
-    // MARK: reads
-
     private func listIssues(_ needle: String) async {
         let project = needle.isEmpty ? model.selectedProject : resolve(needle)
         if !needle.isEmpty && project == nil { report(noMatch(needle)); return }
@@ -408,13 +373,9 @@ final class SlashRunner: ObservableObject {
     }
 
     private func showHelp() {
-        // The palette is the real help — this line exists so `/help` says where
-        // it is before spelling out the names for anyone who wants them.
         report("\(SlashCommands.all.count) commands · type / to browse them · "
                + SlashCommands.all.map { "/" + $0.name }.joined(separator: " "))
     }
-
-    // MARK: the app itself
 
     private func setup(_ roots: [String]) async {
         report("scanning for projects…")
@@ -430,26 +391,16 @@ final class SlashRunner: ObservableObject {
         let reply = await Wire.post("/v1/update", as: API.UpdateResponse.self)
         guard let response = reply.value else { report(reply.text); return }
         guard response.restarting else {
-            // Nothing to install: already current, or the pull/build failed.
-            // Either way the running app is still the right one.
             report(response.message)
             model.refresh()
             return
         }
-        // The daemon rebuilt the app bundle, then exited into its own new
-        // binary — but nothing was restarting the APP, so it went on running
-        // the old build. That is how a fix that has already landed keeps
-        // being reported as broken for the rest of the day.
+
         report("\(response.message) — restarting the app…")
         try? await Task.sleep(nanoseconds: 700_000_000)
         SlashRunner.relaunchApp()
     }
 
-    /// Relaunch the freshly built bundle and stand down.
-    ///
-    /// A detached login shell, never a `Process` child: this app is about to
-    /// terminate, and anything parented to it would die alongside it before it
-    /// ever reached `open`.
     static func relaunchApp() {
         guard let repo = Config.load().repoPath ?? Registry().find("ouroboros")?.path else {
             NSApplication.shared.terminate(nil)
@@ -464,14 +415,6 @@ final class SlashRunner: ObservableObject {
         NSApplication.shared.terminate(nil)
     }
 
-    /// Rebuild from the working tree and relaunch into it.
-    ///
-    /// The moment after an agent merges a fix into Ouroboros, the running app is
-    /// the version WITHOUT that fix. `/update` would pull first, which is wrong
-    /// here: the code you want is already on disk. This takes it as it stands.
-    ///
-    /// The relaunch is a detached shell, not a Process child, because this app is
-    /// about to die and anything parented to it would die with it.
     private func rebuildFromSource() async {
         report("rebuilding from source…")
         let ok = await Wire.offMain({ () -> Bool in
@@ -506,8 +449,7 @@ final class SlashRunner: ObservableObject {
             report("capture hotkey is \(current) — /hotkey cmd+shift+space to change it")
             return
         }
-        // Read-modify-write: config.json is shared with the daemon and the CLI,
-        // and writing a fresh Config here would silently reset everything else.
+
         let saved = await Wire.offMain({ () -> Bool in
             var config = Config.load()
             config.hotkey = combo
@@ -517,8 +459,6 @@ final class SlashRunner: ObservableObject {
                ? "hotkey set to \(combo) — it takes effect the next time the app launches"
                : "could not write ~/.ouroboros/config.json")
     }
-
-    // MARK: helpers
 
     private func report(_ text: String) {
         status = text
@@ -546,9 +486,6 @@ final class SlashRunner: ObservableObject {
         return updated
     }
 
-    /// A run id, or — with none — the newest inbox item this action is for.
-    /// "/merge" nearly always means "merge the one that is waiting", and typing
-    /// `r-ms44fbsz-fam3` to say so is exactly the friction Zero exists to delete.
     private func resolveRun(_ rawId: String, kind: InboxItem.Kind) async -> String? {
         guard rawId.isEmpty else { return rawId }
         let reply = await Wire.get("/v1/inbox", as: API.InboxList.self)
@@ -556,8 +493,6 @@ final class SlashRunner: ObservableObject {
         return items.first(where: { $0.kind == kind && $0.runId != nil })?.runId
     }
 
-    /// The registry's own rule, so `/project monda` resolves the way
-    /// `ouro i -p monda` does.
     private func resolve(_ needle: String) -> Project? {
         let key = needle.lowercased()
         let projects = model.projects
@@ -573,8 +508,6 @@ final class SlashRunner: ObservableObject {
         "no project matching \(needle)"
     }
 }
-
-// MARK: - the palette
 
 struct SlashPalette: View {
     let matches: [SlashCommand]
@@ -629,11 +562,6 @@ struct SlashPalette: View {
     }
 }
 
-// MARK: - the wizard
-
-/// `/add` and `/new` are the two commands that cannot be a one-liner: one needs
-/// a directory you have to go and find, the other needs the four decisions that
-/// shape a repository. Everything else in this file stays on the command line.
 struct ProjectWizardSheet: View {
     let request: WizardRequest
     @ObservedObject var model: AppModel
@@ -645,8 +573,7 @@ struct ProjectWizardSheet: View {
     @State private var github = "none"
     @State private var roadmap = false
     @State private var projectsRoot = "~/dev"
-    /// Auto-fill is a convenience, never a correction: the moment the user types
-    /// in the derived field it stops writing over them.
+
     @State private var nameEdited = false
     @State private var dirEdited = false
     @State private var working = false
@@ -700,8 +627,7 @@ struct ProjectWizardSheet: View {
         .padding(18)
         .frame(width: 460)
         .background(.regularMaterial)
-        // `.task` promises no main-actor context, and SwiftUI state written off
-        // it is a race the debugger only sometimes catches.
+
         .task {
             let root = await Wire.offMain({ Config.load().projectsRoot })
             await MainActor.run {
@@ -716,8 +642,6 @@ struct ProjectWizardSheet: View {
             ? directory.trimmingCharacters(in: .whitespaces).isEmpty
             : name.trimmingCharacters(in: .whitespaces).isEmpty
     }
-
-    // MARK: fields
 
     private var addFields: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -792,8 +716,6 @@ struct ProjectWizardSheet: View {
         }
     }
 
-    // MARK: bindings
-
     private var directoryBinding: Binding<String> {
         Binding(get: { directory },
                 set: { typed in
@@ -820,8 +742,6 @@ struct ProjectWizardSheet: View {
         guard !trimmed.isEmpty else { return "" }
         return (projectsRoot as NSString).appendingPathComponent(trimmed)
     }
-
-    // MARK: actions
 
     @MainActor
     private func choose() {
@@ -876,8 +796,6 @@ struct ProjectWizardSheet: View {
         finish(created.project, saying: created.message)
     }
 
-    /// Same channel the slash commands report through, so the panel only ever
-    /// has one line to render no matter which surface did the work.
     @MainActor
     private func finish(_ project: Project, saying text: String) {
         model.selectedProjectId = project.id
@@ -887,12 +805,6 @@ struct ProjectWizardSheet: View {
     }
 }
 
-// MARK: - plumbing
-
-/// Every call in this file leaves the main actor exactly the way `AppModel`'s do:
-/// `ZeroClient` blocks on a unix socket, and a menu-bar panel that stutters while
-/// `make install` runs is a panel nobody keeps open. Failures come back as text
-/// because a status line is all there is to say them in.
 private enum Wire {
     static let client = ZeroClient()
 
@@ -918,7 +830,6 @@ private enum Wire {
         await perform { try $0.delete(path, as: R.self) }
     }
 
-    /// For the file reads — `config.json` is small, but it is still disk.
     static func offMain<R: Sendable>(_ work: @escaping @Sendable () -> R) async -> R {
         await Task.detached(priority: .userInitiated) { work() }.value
     }
@@ -942,8 +853,6 @@ private struct Reply<R: Sendable>: Sendable {
     var text: String { error ?? "the daemon said nothing" }
 }
 
-/// The daemon percent-decodes query values, and a project typed by hand is not
-/// a slug — same escaping the CLI uses.
 private func escape(_ value: String) -> String {
     value.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? value
 }
@@ -954,7 +863,6 @@ private func isDirectory(_ path: String) -> Bool {
     return exists && directory.boolValue
 }
 
-/// `~/dev/acme` reads better than `/Users/you/dev/acme` in one line.
 private func tildeify(_ path: String) -> String {
     let home = NSHomeDirectory()
     guard path == home || path.hasPrefix(home + "/") else { return path }

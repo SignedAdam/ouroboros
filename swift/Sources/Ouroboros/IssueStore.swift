@@ -12,8 +12,6 @@ public struct IssueStore: Sendable {
         self.now = now
     }
 
-    /// Directory for a status: if `subdir`'s last component is a status raw value it is
-    /// replaced by `s.rawValue`; otherwise `s.rawValue` is appended.
     func statusDir(_ s: IssueStatus) -> String {
         var parts = subdir.split(separator: "/").map(String.init)
         if let last = parts.last, IssueStatus(rawValue: last) != nil {
@@ -55,7 +53,6 @@ public struct IssueStore: Sendable {
         return Self.availablePath(in: dir(), filename: fn)
     }
 
-    /// First non-existing path for `filename` in `d`, deduping with " 2"/" 3"/… suffixes.
     static func availablePath(in d: String, filename fn: String) -> String? {
         let first = (d as NSString).appendingPathComponent(fn)
         if !FileManager.default.fileExists(atPath: first) { return first }
@@ -77,9 +74,6 @@ public struct IssueStore: Sendable {
         let parent = (path as NSString).deletingLastPathComponent
         try? FileManager.default.createDirectory(atPath: parent, withIntermediateDirectories: true)
 
-        // Screenshot first: the body gains its `## Screenshot` section (absolute
-        // path — the fixing agent may run from a worktree where the live repo's
-        // uncommitted .issues/ files don't exist, so relative paths would dangle).
         if let screenshot {
             let slug = IssueText.slugify(t)
             let d = attachmentsDir()
@@ -112,8 +106,6 @@ public struct IssueStore: Sendable {
         let body: String
     }
 
-    /// Line-based parse of an issue document. Tolerates files with no frontmatter
-    /// (legacy v1 `## Title\n\nbody`, or arbitrary markdown).
     static func parse(content: String) -> ParsedDoc {
         let lines = content.components(separatedBy: "\n")
         var fmTitle: String?
@@ -151,9 +143,6 @@ public struct IssueStore: Sendable {
         return ParsedDoc(title: title, created: fmCreated, hadFrontmatter: hadFrontmatter, body: body)
     }
 
-    /// Parse one issue file. Status is inferred from the parent folder name (fallback `.new`).
-    /// Legacy files (no frontmatter) derive title from the first `## ` heading (else the
-    /// filename) and `created` from the file's modification date.
     public func read(path: String) -> Issue? {
         guard let content = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
         let parentName = (((path as NSString).deletingLastPathComponent) as NSString).lastPathComponent
@@ -170,8 +159,6 @@ public struct IssueStore: Sendable {
                      created: created, status: status)
     }
 
-    /// All issues across the four status folders (existing ones only),
-    /// sorted created-descending; issues with no created date sort last.
     public func list() -> [Issue] {
         let fm = FileManager.default
         var issues: [Issue] = []
@@ -193,10 +180,6 @@ public struct IssueStore: Sendable {
         }
     }
 
-    /// Rewrite the issue file in place with the new (trimmed) body, preserving the file's
-    /// title and created date. On a legacy file (no frontmatter) the derived title and the
-    /// file's modification date are promoted into frontmatter. Nil on empty body or
-    /// missing path.
     @discardableResult
     public func updateBody(_ issue: Issue, body: String) -> Issue? {
         let b = body.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -212,9 +195,6 @@ public struct IssueStore: Sendable {
                      created: created, status: existing.status)
     }
 
-    /// Move the issue file to the folder for `status` (created if needed), deduping name
-    /// collisions. Returns the issue with updated path + status; nil on missing path or
-    /// a failed move.
     @discardableResult
     public func setStatus(_ issue: Issue, _ status: IssueStatus) -> Issue? {
         let fm = FileManager.default
@@ -223,7 +203,7 @@ public struct IssueStore: Sendable {
         try? fm.createDirectory(atPath: destDir, withIntermediateDirectories: true)
         let fn = (path as NSString).lastPathComponent
         let straight = (destDir as NSString).appendingPathComponent(fn)
-        if straight == path {   // already in that folder — nothing to move
+        if straight == path {
             return Issue(title: issue.title, slug: issue.slug, body: issue.body, path: path,
                          created: issue.created, status: status)
         }

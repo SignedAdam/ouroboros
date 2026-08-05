@@ -1,5 +1,4 @@
 #!/bin/zsh
-# Record a screen region to mp4. Region defaults to the built-in display.
 set -e
 SECS="${1:?usage: ouro-rec <seconds> [x,y,w,h] <out.mp4>}"
 if [[ $# -ge 3 ]]; then REGION="$2"; OUT="$3"; else REGION="0,0,1496,967"; OUT="$2"; fi

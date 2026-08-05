@@ -9,8 +9,6 @@ final class IssueTrackingTests: XCTestCase {
         return p
     }
 
-    // MARK: - IssueStatus + Issue metadata fields
-
     func testIssueStatusCases() {
         XCTAssertEqual(IssueStatus.allCases.map(\.rawValue), ["new", "planned", "done", "cancelled"])
     }
@@ -25,8 +23,6 @@ final class IssueTrackingTests: XCTestCase {
         XCTAssertEqual(dated.status, .done)
     }
 
-    // MARK: - statusDir layout rule
-
     func testStatusDirReplacesStatusSuffix() {
         let store = IssueStore(rootDir: "/repo")
         XCTAssertEqual(store.statusDir(.new), "/repo/.issues/new")
@@ -39,8 +35,6 @@ final class IssueTrackingTests: XCTestCase {
         XCTAssertEqual(store.statusDir(.new), "/repo/tickets/new")
         XCTAssertEqual(store.statusDir(.planned), "/repo/tickets/planned")
     }
-
-    // MARK: - read (frontmatter roundtrip + legacy tolerance)
 
     func testReadRoundtripsFrontmatter() {
         let root = tempDir()
@@ -103,8 +97,6 @@ final class IssueTrackingTests: XCTestCase {
         XCTAssertNil(store.read(path: "/nonexistent/nope.md"))
     }
 
-    // MARK: - list
-
     private func put(_ root: String, _ status: String, _ name: String, _ content: String) throws -> String {
         let d = (root as NSString).appendingPathComponent(".issues/\(status)")
         try FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)
@@ -123,9 +115,9 @@ final class IssueTrackingTests: XCTestCase {
         _ = try put(root, "done", "Oldest.md",
                     "---\ntitle: Oldest\ncreated: 2026-07-01T00:00:00Z\n---\n\n## Oldest\n\no\n")
         _ = try put(root, "new", "Undated.md",
-                    "---\ntitle: Undated\n---\n\n## Undated\n\nu\n")   // no created → sorts last
-        _ = try put(root, "new", "notes.txt", "not an issue")          // non-md ignored
-        // .issues/cancelled deliberately absent — must not blow up.
+                    "---\ntitle: Undated\n---\n\n## Undated\n\nu\n")
+        _ = try put(root, "new", "notes.txt", "not an issue")
+
         let issues = store.list()
         XCTAssertEqual(issues.map(\.title), ["Newest", "Middle", "Oldest", "Undated"])
         XCTAssertEqual(issues.map(\.status), [.planned, .new, .done, .new])
@@ -135,8 +127,6 @@ final class IssueTrackingTests: XCTestCase {
     func testListEmptyRootReturnsEmpty() {
         XCTAssertEqual(IssueStore(rootDir: tempDir()).list().count, 0)
     }
-
-    // MARK: - setStatus
 
     func testSetStatusMovesFileToStatusFolder() {
         let root = tempDir()
@@ -180,8 +170,6 @@ final class IssueTrackingTests: XCTestCase {
                                            path: "/nonexistent/X.md"), .done))
     }
 
-    // MARK: - updateBody
-
     func testUpdateBodyPreservesTitleAndCreated() throws {
         let root = tempDir()
         let pinned = ISO8601DateFormatter().date(from: "2026-07-03T02:55:12Z")!
@@ -213,7 +201,7 @@ final class IssueTrackingTests: XCTestCase {
         let issue = store.write(title: "Solid", body: "original")!
         XCTAssertNil(store.updateBody(issue, body: "   \n  "))
         let content = try String(contentsOfFile: issue.path!, encoding: .utf8)
-        XCTAssertTrue(content.contains("original"))                     // untouched
+        XCTAssertTrue(content.contains("original"))
         XCTAssertNil(store.updateBody(Issue(title: "X", slug: "x", body: "b"), body: "new"))
         XCTAssertNil(store.updateBody(Issue(title: "X", slug: "x", body: "b",
                                             path: "/nonexistent/X.md"), body: "new"))

@@ -1,22 +1,7 @@
 import Foundation
 import ZeroCore
 
-/// `ouro run-shim <run-id> --home <home> -- <agent argv…>`
-///
-/// The thin wrapper that turns "we launched a terminal and hoped" into a
-/// supervised run. It lives *inside* the agent's terminal window, so it is the
-/// only thing that can truthfully say when the agent started, when it exited,
-/// and with what code.
-///
-/// Two rules it must never break:
-///   1. The agent keeps a real interactive TTY. You watch these windows and
-///      sometimes types into them; a shim that swallowed the terminal would
-///      destroy the best part of the product. `script(1)` gives us a tee
-///      without taking the pty away.
-///   2. It reports even when the daemon is down — `shim.json` on disk is the
-///      fallback the daemon reconciles at startup.
 enum Shim {
-
     static func run(_ args: Args) -> Never {
         guard let runId = args.positional.first else {
             Out.die("usage: ouro run-shim <run-id> --home <dir> -- <command…>")
@@ -36,22 +21,6 @@ enum Shim {
         let selfPid = ProcessInfo.processInfo.processIdentifier
         report(client, runId, "started", ShimReport(phase: "started", pid: selfPid), to: shimPath)
 
-        // No pty, ever. The obvious design was `script(1)` — it hands the agent a
-        // real terminal and tees to a log, so you get both. In practice it gives
-        // you neither: it dies with "tcgetattr: Operation not supported on
-        // socket" whenever stdin isn't a terminal, and when it *does* get one,
-        // harnesses in print mode (`claude -p`) sit forever waiting on a stdin
-        // that will never produce anything. Runs hung at 0 bytes of output.
-        //
-        // So the shim owns the plumbing itself: the agent gets /dev/null on
-        // stdin and a pipe on stdout, and we tee that pipe to the terminal AND
-        // the log. Live output in the window, a complete log on disk, identical
-        // behaviour in cinema / tmux / silent mode, and nothing to hang on.
-        //
-        // A supervised run is unattended by definition anyway. You watch these
-        // windows; you don't type into them. When an agent genuinely needs a
-        // human it writes `needs-input`, and the answer comes back through
-        // `ouro reply` — a channel that outlives the window.
         FileManager.default.createFile(atPath: logPath, contents: nil)
         let logHandle = FileHandle(forWritingAtPath: logPath)
         let pipe = Pipe()
@@ -63,8 +32,6 @@ enum Shim {
         process.standardError = pipe
         process.standardInput = FileHandle.nullDevice
         if !agentArgv[0].hasPrefix("/") {
-            // Resolve through a login shell: a Finder-launched daemon hands us
-            // a bare `claude` with no Homebrew PATH behind it.
             if let resolved = Shell.which(agentArgv[0]) {
                 process.executableURL = URL(fileURLWithPath: resolved)
             }
@@ -86,9 +53,7 @@ enum Shim {
         env["OUROBOROS_HOME"] = home
         env["OUROBOROS_RUN_ID"] = runId
         env["OUROBOROS_RESULT_FILE"] = (runDir as NSString).appendingPathComponent("result.json")
-        // The toolbelt goes on PATH ahead of everything else, and its spec goes in
-        // an env var, so an agent can verify a UI change by looking at the UI
-        // instead of inferring it from a diff.
+
         let tools = (home as NSString).appendingPathComponent("tools")
         if FileManager.default.fileExists(atPath: tools) {
             env["PATH"] = tools + ":" + (env["PATH"] ?? "/usr/bin:/bin")
@@ -113,7 +78,7 @@ enum Shim {
         }
 
         process.waitUntilExit()
-        _ = drained.wait(timeout: .now() + 5)   // don't lose the agent's last lines
+        _ = drained.wait(timeout: .now() + 5)
         try? logHandle?.close()
         let code = process.terminationStatus
         report(client, runId, "exited", ShimReport(phase: "exited", pid: selfPid, exitCode: code),
@@ -123,21 +88,6 @@ enum Shim {
         exit(code)
     }
 
-    /// Strip the calling agent session out of the environment before handing it
-    /// to a fresh agent.
-    ///
-    /// Ouroboros is meant to be installed and started BY an agent, so the daemon
-    /// is routinely launched from inside one. Everything that session exported
-    /// then flows down: its `ANTHROPIC_API_KEY` overrides the user's own
-    /// claude.ai login, and its `CLAUDE_CODE_*` variables make the new agent
-    /// believe it is a continuation of a session that has nothing to do with it.
-    /// A stale or empty key here fails every single run, with an error about
-    /// credit that points nowhere near the cause.
-    ///
-    /// `CLAUDECODE` is the tell. If it is set, these credentials belong to a
-    /// parent agent rather than to the user, so they go. If it is absent the
-    /// daemon was started normally and a deliberately configured key is left
-    /// exactly where it is.
     static func scrubInheritedSession(_ env: inout [String: String]) {
         let insideAgentSession = env["CLAUDECODE"] != nil
             || env["CLAUDE_CODE_SESSION_ID"] != nil
@@ -158,7 +108,7 @@ enum Shim {
 
     private static func report(_ client: ZeroClient, _ runId: String, _ phase: String,
                                _ payload: ShimReport, to path: String) {
-        Zero.writeJSON(payload, to: path)   // always, first — the daemon may be down
+        Zero.writeJSON(payload, to: path)
         let route = "/v1/runs/\(runId)/shim/\(phase)"
         if phase == "started" {
             _ = try? client.post(route, API.ShimStarted(pid: payload.pid ?? 0),
@@ -169,8 +119,6 @@ enum Shim {
         }
     }
 
-    /// A closing beat in the cinema window. The window dies with this process,
-    /// so without a pause the run just vanishes and you learn nothing.
     private static func outro(runDir: String, exitCode: Int32) {
         let resultPath = (runDir as NSString).appendingPathComponent("result.json")
         let result = Zero.readJSON(AgentResult.self, from: resultPath)

@@ -9,8 +9,6 @@ private func tempDir(_ name: String) -> String {
     return path
 }
 
-// MARK: - Registry
-
 final class RegistryTests: XCTestCase {
     func testSlugIsStableAndDedupes() {
         XCTAssertEqual(Registry.slug("Atlas App", taken: []), "atlas-app")
@@ -35,7 +33,6 @@ final class RegistryTests: XCTestCase {
     }
 
     func testContainingDoesNotMatchSiblingPrefixes() {
-        // "/tmp/work-2" must NOT be considered inside "/tmp/work".
         let file = (tempDir("reg2") as NSString).appendingPathComponent("projects.json")
         let registry = Registry(file: file)
         registry.upsert(Project(id: "work", name: "work", path: "/tmp/work"))
@@ -53,9 +50,6 @@ final class RegistryTests: XCTestCase {
     }
 
     func testBulkRegistrationDoesNotCountAsUse() {
-        // `ouro setup` adopts every repo under ~/dev at once. If that counted as
-        // use, the capture panel's default project would be whichever of 57
-        // registrations won a microsecond race.
         let dir = tempDir("bulk")
         let file = (dir as NSString).appendingPathComponent("projects.json")
         let registry = Registry(file: file)
@@ -115,7 +109,7 @@ final class RegistryTests: XCTestCase {
         try? FileManager.default.createDirectory(
             atPath: (repo as NSString).appendingPathComponent(".git"),
             withIntermediateDirectories: true)
-        // A fresh clone has no logs/HEAD yet; the repo still exists and must rank.
+
         XCTAssertNotNil(Registry.gitActivity(at: repo))
         XCTAssertNil(Registry.gitActivity(at: tempDir("notarepo")))
     }
@@ -128,8 +122,6 @@ final class RegistryTests: XCTestCase {
         XCTAssertNil(Registry.guessVerifyCommand(tempDir("empty")))
     }
 }
-
-// MARK: - Runs
 
 final class RunStoreTests: XCTestCase {
     private func makeRun(_ id: String = "r-1", status: RunStatus = .queued) -> Run {
@@ -170,8 +162,6 @@ final class RunStoreTests: XCTestCase {
         XCTAssertFalse(RunStatus.verifying.isTerminal)
     }
 }
-
-// MARK: - Inbox
 
 final class InboxTests: XCTestCase {
     private func run(_ id: String, _ status: RunStatus, merged: String? = nil,
@@ -228,8 +218,6 @@ final class InboxTests: XCTestCase {
     }
 }
 
-// MARK: - Proposals
-
 final class ProposalStoreTests: XCTestCase {
     func testDedupeSuppressesRepeats() {
         let store = ProposalStore(root: tempDir("prop"))
@@ -256,8 +244,6 @@ final class ProposalStoreTests: XCTestCase {
         XCTAssertTrue(created)
     }
 }
-
-// MARK: - Ideas
 
 final class IdeaStoreTests: XCTestCase {
     func testRoundTripWithProjectHint() {
@@ -286,8 +272,6 @@ final class IdeaStoreTests: XCTestCase {
     }
 }
 
-// MARK: - Prompt
-
 final class SupervisedPromptTests: XCTestCase {
     private var context: SupervisedPrompt.Context {
         SupervisedPrompt.Context(
@@ -299,7 +283,7 @@ final class SupervisedPromptTests: XCTestCase {
 
     func testForbidsTheAgentFromLanding() {
         let prompt = SupervisedPrompt.fix(context)
-        // The single most important property of the supervised prompt.
+
         XCTAssertTrue(prompt.contains("do NOT"))
         XCTAssertTrue(prompt.contains("merge, rebase onto, or push"))
         XCTAssertTrue(prompt.contains("move or resolve the issue file"))
@@ -321,8 +305,6 @@ final class SupervisedPromptTests: XCTestCase {
         XCTAssertTrue(prompt.contains("migrations/, deploy/"))
     }
 
-    // MARK: the conflict report
-
     private var conflict: SupervisedPrompt.ConflictContext {
         SupervisedPrompt.ConflictContext(
             branch: "fix/login", base: "main",
@@ -331,8 +313,6 @@ final class SupervisedPromptTests: XCTestCase {
             resultPath: "/runs/r-3/result.json", verifyCmd: "swift build")
     }
 
-    /// What the run is actually about, in the order §2 asks for it: the branch
-    /// no longer merges, the two commits, the files.
     func testItSaysWhatStoppedMerging() {
         let prompt = SupervisedPrompt.resolve(conflict)
         XCTAssertTrue(prompt.contains("`fix/login` no longer merges into `main`"))
@@ -343,10 +323,6 @@ final class SupervisedPromptTests: XCTestCase {
         XCTAssertTrue(prompt.contains("Rebase `fix/login` onto `main`"))
     }
 
-    /// The property the whole feature turns on. An agent that cannot tell which
-    /// side of a conflict is right has to stop and say so — and it must not be
-    /// left with the impression that picking one to get a green build is an
-    /// acceptable way out.
     func testItSaysToAskRatherThanGuess() {
         let prompt = SupervisedPrompt.resolve(conflict)
         XCTAssertTrue(prompt.contains("stop and ask"))
@@ -357,8 +333,6 @@ final class SupervisedPromptTests: XCTestCase {
         XCTAssertTrue(prompt.contains("/runs/r-3/result.json"))
     }
 
-    /// The same rule as every other supervised run: it produces a branch that
-    /// merges, it never performs the merge.
     func testItStillForbidsLandingItsOwnWork() {
         let prompt = SupervisedPrompt.resolve(conflict)
         XCTAssertTrue(prompt.contains("do NOT"))
@@ -367,9 +341,6 @@ final class SupervisedPromptTests: XCTestCase {
         XCTAssertTrue(prompt.contains("swift build"))
     }
 
-    /// A resumed agent wrote the branch from the issue and does not need it
-    /// quoted back; a fresh one has never seen either, and is told so rather
-    /// than left to discover it.
     func testAFreshAgentIsToldItIsReadingSomebodyElsesWork() {
         var ctx = conflict
         ctx.issue = "## Login button dead\n\nclicking it does nothing"
@@ -406,8 +377,6 @@ final class SupervisedPromptTests: XCTestCase {
     }
 }
 
-// MARK: - Transport
-
 final class HTTPParsingTests: XCTestCase {
     func testSplitTargetDecodesQuery() {
         let (path, query) = HTTPServer.splitTarget("/v1/issues?project=my%20app&status=new")
@@ -432,8 +401,6 @@ final class HTTPParsingTests: XCTestCase {
         XCTAssertNil(request.flag("missing"))
     }
 }
-
-// MARK: - Paths
 
 final class PathsTests: XCTestCase {
     func testLongHomeFallsBackToAShortSocketPath() {
@@ -460,14 +427,8 @@ final class PathsTests: XCTestCase {
     }
 }
 
-// MARK: - Config
-
 final class ConfigTests: XCTestCase {
     func testOlderConfigsKeepTheirSettings() throws {
-        // The regression that cost an evening: adding `hotkey` to the struct made
-        // every existing config.json fail to decode, and load() wrote defaults
-        // over the top. The user's `-p` flag vanished and every dispatched agent
-        // launched an interactive TUI and hung.
         let json = """
         {"maxParallel": 7, "defaultAgent": "codex", "terminal": "tmux",
          "agents": {"claude": ["claude", "-p", "{prompt}"]},
@@ -489,8 +450,6 @@ final class ConfigTests: XCTestCase {
     }
 
     func testDefaultAgentsAreNonInteractive() {
-        // A supervised agent gets /dev/null on stdin. Any harness that would open
-        // an interactive session here hangs forever with an empty log.
         for (name, argv) in Config.defaultAgents {
             XCTAssertGreaterThan(argv.count, 2,
                                  "\(name) needs a non-interactive flag, not just a prompt")
@@ -499,12 +458,8 @@ final class ConfigTests: XCTestCase {
     }
 }
 
-// MARK: - Failure diagnosis
-
 final class DiagnoseTests: XCTestCase {
     func testInheritedKeyIsNamedAsTheCause() {
-        // The real failure in the field: the daemon was started from inside an agent
-        // session, inherited its key, and every run died pointing at billing.
         let log = """
         ⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY or another auth
         source is set and takes precedence over your claude.ai login
@@ -530,8 +485,6 @@ final class DiagnoseTests: XCTestCase {
         XCTAssertNil(Supervisor.diagnose("error: cannot find 'foo' in scope"))
     }
 }
-
-// MARK: - Merge safety
 
 final class GitMergeSafetyTests: XCTestCase {
     private func makeRepo() -> String {
@@ -559,8 +512,6 @@ final class GitMergeSafetyTests: XCTestCase {
     }
 
     func testUntrackedJunkDoesNotBlockAMerge() {
-        // The bug this test exists for: a __pycache__ directory created by the
-        // verification command blocked every auto-merge.
         let dir = makeRepo()
         write(dir, "__pycache__/x.pyc", "junk")
         write(dir, "scratch.txt", "notes")
@@ -594,8 +545,6 @@ final class GitMergeSafetyTests: XCTestCase {
     }
 }
 
-// MARK: - Failure reporting
-
 final class LastWordsTests: XCTestCase {
     func testExtractsTheFinalMeaningfulLine() {
         let log = """
@@ -618,8 +567,6 @@ final class LastWordsTests: XCTestCase {
         XCTAssertEqual(Supervisor.lastWords(long, limit: 20)?.count, 20)
     }
 }
-
-// MARK: - Policy
 
 final class PolicyTests: XCTestCase {
     func testAutonomyDecidesTheDefaultFinishOnly() {

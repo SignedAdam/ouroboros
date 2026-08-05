@@ -85,8 +85,7 @@ case "setup", "init":                 Commands.setup(args)
 case "i", "issue", "file":            Commands.issue(args)
 case "issues", "ls":                  Commands.issues(args)
 case "fix":                           Commands.fix(args)
-// `resolve` used to be an alias for `done`; it is its own verb now — the one
-// that sends an agent back to a branch that stopped merging.
+
 case "done":                          Commands.done(args)
 case "runs", "ps":                    Commands.runs(args)
 case "log", "logs":                   Commands.log(args)

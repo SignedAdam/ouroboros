@@ -1,11 +1,7 @@
 import XCTest
 @testable import ZeroCore
 
-/// Reading `git diff` is the one place a rendering bug turns into a wrong
-/// answer about code. These are the shapes git actually emits, including the
-/// four that used to be handled by ignoring them.
 final class UnifiedDiffTests: XCTestCase {
-
     func testOneModifiedFileWithOneHunk() {
         let patch = """
         diff --git a/Sources/App.swift b/Sources/App.swift
@@ -32,8 +28,6 @@ final class UnifiedDiffTests: XCTestCase {
         XCTAssertEqual(file.hunks[0].context, "func start() {")
     }
 
-    /// The marker is stripped: a view that wants to show the code should not
-    /// have to know that column one is a control character.
     func testLinesCarryTheirKindAndNotTheirMarker() {
         let patch = """
         diff --git a/a.txt b/a.txt
@@ -85,8 +79,6 @@ final class UnifiedDiffTests: XCTestCase {
         XCTAssertEqual(hunks[1].oldStart, 40)
     }
 
-    /// A new file's old side is /dev/null, so the path has to come off the +++
-    /// line — and the change is `added`, which is what a reviewer scans for.
     func testANewFile() {
         let patch = """
         diff --git a/new.swift b/new.swift
@@ -139,7 +131,6 @@ final class UnifiedDiffTests: XCTestCase {
         XCTAssertEqual(file.change, .renamed)
     }
 
-    /// A pure rename has no hunks at all, and used to fall out of the list.
     func testARenameWithNoEditsStillAppears() {
         let patch = """
         diff --git a/from.swift b/to.swift
@@ -166,8 +157,6 @@ final class UnifiedDiffTests: XCTestCase {
         XCTAssertTrue(file.hunks.isEmpty)
     }
 
-    /// "\\ No newline at end of file" describes the line above it. Counting it
-    /// as a line of the file puts a stray row in the middle of a hunk.
     func testTheNoNewlineNoteIsNotALine() {
         let patch = """
         diff --git a/a.txt b/a.txt
@@ -182,8 +171,6 @@ final class UnifiedDiffTests: XCTestCase {
         XCTAssertEqual(lines.map(\.kind), [.removed, .added])
     }
 
-    /// An empty line inside a hunk arrives as a zero-length string, not as a
-    /// space, and it is context.
     func testAnEmptyContextLineSurvives() {
         let patch = "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1,3 +1,3 @@\n a\n\n+b\n"
         let lines = UnifiedDiff.parse(patch)[0].hunks[0].lines
@@ -210,9 +197,7 @@ final class UnifiedDiffTests: XCTestCase {
     }
 }
 
-/// The report as a whole: what it totals, and what it says about itself.
 final class DiffReportTests: XCTestCase {
-
     private func report() -> DiffReport {
         DiffReport(
             runId: "r-1", base: "main", branch: "fix/x",
@@ -245,15 +230,12 @@ final class DiffReportTests: XCTestCase {
         XCTAssertEqual(empty.summary, "no changes")
     }
 
-    /// The payload crosses a socket to the CLI and to the panel; it has to
-    /// survive the trip whole.
     func testRoundTrip() throws {
         let data = try JSONEncoder().encode(report())
         let back = try JSONDecoder().decode(DiffReport.self, from: data)
         XCTAssertEqual(back, report())
     }
 
-    /// A diff, like a merge verdict, names the two commits it is about.
     func testItNamesWhatItCompared() {
         XCTAssertEqual(report().baseSha, "aaaa")
         XCTAssertEqual(report().branchSha, "bbbb")

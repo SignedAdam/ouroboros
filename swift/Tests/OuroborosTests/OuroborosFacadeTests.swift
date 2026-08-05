@@ -29,8 +29,8 @@ final class OuroborosFacadeTests: XCTestCase {
         let issue = Issue(title: "Fix login", slug: "fix-login", body: "broken", path: "\(repo)/.issues/new/Fix login.md")
         let ok = o.handToAgent(issue, options: FixOptions(worktree: true, finish: .mergeIntoBase))
         XCTAssertTrue(ok)
-        XCTAssertEqual(box.git.first?.first, "worktree")          // worktree created first
-        XCTAssertEqual(box.launched.count, 1)                     // then launched
+        XCTAssertEqual(box.git.first?.first, "worktree")
+        XCTAssertEqual(box.launched.count, 1)
         XCTAssertEqual(box.launched.first?.cwd, "\(repo)/.ouroboros/worktrees/fix-login")
         XCTAssertEqual(box.launched.first?.argv.first, "claude")
         XCTAssertTrue(box.launched.first?.argv.last?.contains("Fix login") == true)

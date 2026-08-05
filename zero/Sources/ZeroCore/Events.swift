@@ -1,8 +1,5 @@
 import Foundation
 
-/// Fan-out for live state. The CLI's `ouro runs -w` and the menu-bar app both
-/// subscribe here rather than polling — a run that flips to `failed` should
-/// reach the eyes watching it in the same second.
 public final class EventBus: @unchecked Sendable {
     private let lock = NSLock()
     private var subscribers: [UUID: SSEConnection] = [:]
@@ -46,7 +43,6 @@ public final class EventBus: @unchecked Sendable {
         }
     }
 
-    /// Keeps proxies and sleepy sockets from dropping an idle stream.
     public func heartbeat() {
         lock.lock(); let targets = Array(subscribers.values); lock.unlock()
         var dead: [UUID] = []
@@ -64,9 +60,6 @@ public final class EventBus: @unchecked Sendable {
     }
 }
 
-/// Outbound pings. Mirrors the inbox and nothing else — the design rule is that
-/// a notification always corresponds to something that needs a decision, so
-/// "run started" is never sent anywhere.
 public struct Notifier: Sendable {
     public let webhook: String?
     public let macOS: Bool
@@ -75,8 +68,7 @@ public struct Notifier: Sendable {
     public init(config: Config) {
         self.webhook = config.discordWebhook
         self.macOS = config.notifyMacOS
-        // Through `canonical`, so a config written before the rename still
-        // asks for the same notifications.
+
         self.enabledKinds = Set(config.notifyOn.map(InboxItem.Kind.canonical))
     }
 
@@ -130,7 +122,7 @@ public struct Notifier: Sendable {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
         request.timeoutInterval = 10
-        // Fire and forget — a Discord outage must never stall a run transition.
+
         URLSession.shared.dataTask(with: request).resume()
     }
 
@@ -146,9 +138,6 @@ public struct Notifier: Sendable {
     }
 }
 
-/// Derives the Needs-You queue. Pure function of runs + proposals: there is no
-/// separate inbox database to drift out of sync, and acknowledging an item is
-/// just a flag on the run it came from.
 public enum Inbox {
     public static func build(runs: [Run], proposals: [Proposal]) -> [InboxItem] {
         var items: [InboxItem] = []
@@ -185,10 +174,6 @@ public enum Inbox {
                         createdAt: run.endedAt ?? run.queuedAt, runId: run.id,
                         actions: ["diff", "undo", "ok"]))
                 } else if let verdict = run.merge, verdict.spent {
-                    // Its work is already on the base — re-applied by hand, or
-                    // cherry-picked in. Nothing to review and nothing to merge,
-                    // so the only thing to decide is whether to let the branch
-                    // go. Quiet: nothing went wrong here.
                     items.append(InboxItem(
                         id: run.id, kind: .review, projectName: run.projectName,
                         title: run.title,
@@ -197,10 +182,6 @@ public enum Inbox {
                         createdAt: run.endedAt ?? run.queuedAt, runId: run.id,
                         actions: ["diff", "discard"]))
                 } else if let verdict = run.merge, !verdict.clean, verdict.error == nil {
-                    // Tested, and it will not go in. Offering "merge" here is
-                    // how this product came to say `ready` about a branch it had
-                    // never tried to merge: an action that is known to fail is
-                    // worse than no action, because it reads as a verdict.
                     let files = verdict.conflicts.prefix(3).joined(separator: ", ")
                     let more = verdict.conflicts.count > 3
                         ? " and \(verdict.conflicts.count - 3) more" : ""
@@ -236,7 +217,6 @@ public enum Inbox {
                 actions: ["fix", "dismiss"]))
         }
 
-        // Questions first — they are the only items actively blocking work.
         let rank: [InboxItem.Kind: Int] = [.question: 0, .failed: 1, .review: 2, .proposal: 3, .merged: 4]
         return items.sorted { a, b in
             let ra = rank[a.kind] ?? 9, rb = rank[b.kind] ?? 9

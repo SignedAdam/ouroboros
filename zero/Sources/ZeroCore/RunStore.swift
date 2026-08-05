@@ -1,18 +1,5 @@
 import Foundation
 
-/// Run state on disk. One directory per run:
-///
-///     ~/.ouroboros/runs/<id>/
-///       run.json      — the record. The DAEMON is its only writer.
-///       log           — the agent's terminal output, tee'd by script(1)
-///       result.json   — written by the AGENT itself, per the seed prompt
-///       prompt.txt    — exactly what we handed the agent
-///       shim.json     — the shim's fallback when the daemon is down
-///
-/// Single-writer for `run.json` is deliberate: the shim runs in a different
-/// process inside the terminal, and two processes rewriting the same JSON is
-/// how you get a truncated file at 3am. The shim reports over the API and only
-/// falls back to `shim.json`, which the daemon reconciles on startup.
 public final class RunStore: @unchecked Sendable {
     private let lock = NSLock()
     private var cache: [String: Run] = [:]
@@ -61,7 +48,7 @@ public final class RunStore: @unchecked Sendable {
     public func get(_ id: String) -> Run? {
         lock.lock(); defer { lock.unlock() }
         if let exact = cache[id] { return exact }
-        // Short-id convenience: `ouro log r-abc` should find `r-abc-xyz9`.
+
         let matches = cache.values.filter { $0.id.hasPrefix(id) }
         return matches.count == 1 ? matches.first : nil
     }
@@ -84,8 +71,6 @@ public final class RunStore: @unchecked Sendable {
         return run
     }
 
-    /// Read-modify-write under the lock. Every status transition goes through
-    /// here so nothing can interleave.
     @discardableResult
     public func mutate(_ id: String, _ change: (inout Run) -> Void) -> Run? {
         lock.lock()
@@ -102,8 +87,6 @@ public final class RunStore: @unchecked Sendable {
         try? FileManager.default.removeItem(atPath: dir(id))
     }
 
-    /// The agent's self-report. Absent is normal — it means the agent finished
-    /// without saying anything, and the gate decides on its own.
     public func readResult(_ id: String) -> AgentResult? {
         Zero.readJSON(AgentResult.self, from: resultPath(id))
     }
@@ -115,7 +98,6 @@ public final class RunStore: @unchecked Sendable {
         return all.suffix(lines).joined(separator: "\n")
     }
 
-    /// Prune terminal runs older than `days`, keeping the most recent `keep`.
     @discardableResult
     public func prune(days: Int = 30, keep: Int = 200) -> Int {
         let cutoff = Date().addingTimeInterval(-Double(days) * 86400)
@@ -131,9 +113,8 @@ public final class RunStore: @unchecked Sendable {
     }
 }
 
-/// What the shim writes when it can't reach the daemon.
 public struct ShimReport: Codable, Sendable {
-    public var phase: String        // "started" | "exited"
+    public var phase: String
     public var pid: Int32?
     public var exitCode: Int32?
     public var at: Date

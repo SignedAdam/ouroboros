@@ -2,18 +2,9 @@ import AppKit
 import SwiftUI
 import Ouroboros
 
-// Ouroboros screenshot annotation: the user marks the captured app screenshot with a
-// high-contrast pen (drag) and text notes (double-click). Annotations are burned into
-// the submitted PNG *and* the note texts travel separately (IssueScreenshot.textNotes)
-// so the fixing agent gets them as real text, not just pixels.
-//
-// All coordinates are UNIT coordinates (0…1, top-left origin) relative to the image,
-// so the same markup renders identically in the small preview, the editor, and the
-// full-resolution burn-in.
-
 public struct ScreenshotNote: Equatable, Sendable {
     public var text: String
-    public var position: CGPoint   // unit coords, top-left of the chip
+    public var position: CGPoint
     public init(text: String, position: CGPoint) {
         self.text = text
         self.position = position
@@ -21,18 +12,15 @@ public struct ScreenshotNote: Equatable, Sendable {
 }
 
 public struct ScreenshotMarkup: Equatable, Sendable {
-    public var strokes: [[CGPoint]] = []   // unit coords
+    public var strokes: [[CGPoint]] = []
     public var notes: [ScreenshotNote] = []
     public var isEmpty: Bool { strokes.isEmpty && notes.isEmpty }
     public init() {}
 }
 
 public enum ScreenshotAnnotator {
-    public static let penColor = NSColor(red: 1.0, green: 0.478, blue: 0.094, alpha: 1)   // #FF7A18
+    public static let penColor = NSColor(red: 1.0, green: 0.478, blue: 0.094, alpha: 1)
 
-    /// Snapshot the app's key window content via cacheDisplay — no screen-recording
-    /// permission, no flicker. Called BEFORE the composer modal renders, so the
-    /// modal is never in frame.
     @MainActor
     public static func captureAppWindow() -> NSImage? {
         guard let view = (NSApp.keyWindow ?? NSApp.mainWindow)?.contentView,
@@ -44,9 +32,6 @@ public enum ScreenshotAnnotator {
         return image
     }
 
-    /// Burn the markup into the base image and return PNG data. Pen = orange with a
-    /// white underlay (contrast on any ground); notes = orange mono text on a dark
-    /// chip. Stroke/font sizes scale with the image so the export matches the editor.
     public static func composite(base: NSImage, markup: ScreenshotMarkup,
                                  accent: NSColor = ScreenshotAnnotator.penColor) -> Data? {
         let size = base.size
@@ -96,8 +81,6 @@ public enum ScreenshotAnnotator {
     }
 }
 
-// The screenshot with its markup rendered on top. Read-only preview or live editor:
-// editable → drag draws a pen stroke, double-click places a text note.
 public struct AnnotatableScreenshotView: View {
     public let image: NSImage
     @Binding public var markup: ScreenshotMarkup
@@ -148,7 +131,7 @@ public struct AnnotatableScreenshotView: View {
                                    style: StrokeStyle(lineWidth: pen, lineCap: .round, lineJoin: .round))
                     }
                 }
-                // Notes as chips (SwiftUI overlay mirrors the burn-in layout).
+
                 ForEach(Array(markup.notes.enumerated()), id: \.offset) { _, note in
                     Text(note.text)
                         .font(.system(size: max(9, size.width * 0.014), weight: .semibold, design: .monospaced))

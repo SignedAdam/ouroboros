@@ -1,24 +1,9 @@
 import Foundation
 import Carbon.HIToolbox
 
-/// The text form of the global capture shortcut — "opt+space",
-/// "cmd+shift+space" — and its translation to and from the Carbon key code and
-/// modifier mask `RegisterEventHotKey` wants.
-///
-/// Pure string↔number work with no window, no event handler and no app: it is
-/// what `/hotkey` writes into `config.json` and what the panel renders in its
-/// footer, so the daemon, the CLI and the tests can all read a combo without
-/// the AppKit machinery that eventually registers one.
 public enum HotkeyCombo {
-
-    /// Tried in order after the configured combo. Ordered by how little else on
-    /// a Mac wants them.
     public static let fallbacks = ["opt+space", "cmd+shift+space", "opt+cmd+space", "opt+cmd+i"]
 
-    /// The combos to attempt, in order: the configured one first, then the
-    /// fallbacks it does not already name. `RegisterEventHotKey` just fails when
-    /// another app already owns a combo and there is no way to ask beforehand,
-    /// so the app walks this list and reports which one it is really listening on.
     public static func chain(preferred: String?) -> [String] {
         var chain: [String] = []
         if let preferred {
@@ -31,9 +16,6 @@ public enum HotkeyCombo {
         return chain
     }
 
-    /// "opt+space", "cmd+shift+space", "ctrl+alt+k" → Carbon key code and mask.
-    /// Bare keys are rejected: a global hotkey with no modifier would swallow
-    /// that key everywhere on the machine.
     public static func parse(_ combo: String) -> (keyCode: UInt32, modifiers: UInt32)? {
         var modifiers: UInt32 = 0
         var key: String?
@@ -50,7 +32,6 @@ public enum HotkeyCombo {
         return (UInt32(code), modifiers)
     }
 
-    /// "opt+space" → "⌥Space", in the order macOS writes modifiers.
     public static func describe(_ combo: String) -> String {
         guard let parsed = parse(combo) else { return combo }
         var glyphs = ""
@@ -61,11 +42,6 @@ public enum HotkeyCombo {
         return glyphs + glyph(for: Int(parsed.keyCode))
     }
 
-    /// The one line the menu-bar panel prints about the global capture key.
-    /// `active` is the combo that really registered — never the configured one,
-    /// which may have been taken — so the panel cannot advertise a key that does
-    /// nothing. When the whole chain was taken there is no key to name, and
-    /// saying so beats naming one.
     public static func captureHint(active: String?) -> String {
         guard let active, !active.trimmingCharacters(in: .whitespaces).isEmpty else {
             return "no capture hotkey — use this menu"
@@ -73,8 +49,6 @@ public enum HotkeyCombo {
         return "\(describe(active)) to capture anywhere"
     }
 
-    /// The canonical spelling of a registered combo, so the app can report the
-    /// key it actually got rather than the one that was asked for.
     public static func name(keyCode: UInt32, modifiers: UInt32) -> String? {
         guard let key = keyName(for: Int(keyCode)) else { return nil }
         var parts: [String] = []
@@ -100,8 +74,6 @@ public enum HotkeyCombo {
         }
     }
 
-    /// An array rather than a dictionary because the reverse lookup — code back
-    /// to name — has to be deterministic.
     static let keys: [(name: String, code: Int)] = [
         ("space", kVK_Space), ("return", kVK_Return), ("escape", kVK_Escape),
         ("tab", kVK_Tab), ("period", kVK_ANSI_Period), ("comma", kVK_ANSI_Comma),

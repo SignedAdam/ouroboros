@@ -7,7 +7,7 @@ final class ScreenshotTests: XCTestCase {
         try FileManager.default.createDirectory(atPath: p, withIntermediateDirectories: true)
         return p
     }
-    private let png = Data([0x89, 0x50, 0x4E, 0x47])   // fake PNG bytes; engine doesn't parse
+    private let png = Data([0x89, 0x50, 0x4E, 0x47])
 
     func testWriteStoresPngAndAppendsSection() throws {
         let root = try tempRoot()
@@ -19,13 +19,13 @@ final class ScreenshotTests: XCTestCase {
 
         let body = issue!.body
         XCTAssertTrue(body.contains("## Screenshot"))
-        XCTAssertTrue(body.contains("`\(pngPath)`"))                  // absolute path
+        XCTAssertTrue(body.contains("`\(pngPath)`"))
         XCTAssertTrue(body.contains("read this image file"))
         XCTAssertTrue(body.contains("pen markings"))
         XCTAssertTrue(body.contains("verbatim:"))
         XCTAssertTrue(body.contains("- \"This button is dead\""))
-        XCTAssertFalse(body.contains("infer the target"))             // has text → no infer line
-        // The section is in the FILE too (what the seed prompt embeds).
+        XCTAssertFalse(body.contains("infer the target"))
+
         let onDisk = try String(contentsOfFile: issue!.path!, encoding: .utf8)
         XCTAssertTrue(onDisk.contains("- \"This button is dead\""))
     }

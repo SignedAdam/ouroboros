@@ -1,13 +1,10 @@
 import Foundation
 
-// MARK: - Project
-
 public enum Autonomy: String, Codable, Sendable, CaseIterable {
-    /// Nothing happens without a click. New projects start here.
     case manual
-    /// Fixes run on their own; merging still asks.
+
     case assist
-    /// Fix, verify, merge, tell me after.
+
     case auto
 
     public var label: String {
@@ -28,9 +25,7 @@ public struct Policy: Codable, Sendable, Equatable {
     public var maxParallel: Int
     public var worktreeDefault: Bool
     public var finishDefault: Finish
-    /// Paths a supervised agent must not touch — migrations, deploy config,
-    /// secrets. Enforced as a post-hoc check on the branch diff, and stated in
-    /// the seed prompt so a well-behaved agent never gets there.
+
     public var protectedPaths: [String]
 
     public init(autonomy: Autonomy = .manual, maxParallel: Int = 2,
@@ -48,20 +43,18 @@ public struct Project: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var name: String
     public var path: String
-    /// nil = auto-detect the repo's current HEAD at dispatch time.
+
     public var baseBranch: String?
     public var defaultAgent: String?
-    /// The single command that decides whether a fix is real. Empty = no gate.
+
     public var verifyCmd: String?
     public var roadmapPath: String?
     public var policy: Policy
     public var createdAt: Date
     public var lastUsed: Date?
-    /// Pinned to the top of the capture panel, however long ago you touched it.
+
     public var favourite: Bool
-    /// Dropped from the panel until Ouroboros is used here again. Cleared by
-    /// `Registry.touch` — filing an issue or dispatching a run un-hides a
-    /// project, committing to it does not.
+
     public var hidden: Bool
 
     public init(id: String, name: String, path: String, baseBranch: String? = nil,
@@ -83,10 +76,6 @@ public struct Project: Codable, Sendable, Equatable, Identifiable {
         self.hidden = hidden
     }
 
-    /// Hand-written for the same reason `Config`'s is: synthesised decoding
-    /// requires every non-optional key to be present, so adding a field would
-    /// make every `projects.json` written before it fail to decode — and a
-    /// registry that fails to decode is a registry that silently becomes empty.
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
@@ -104,24 +93,22 @@ public struct Project: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-// MARK: - Runs
-
 public enum RunKind: String, Codable, Sendable {
-    case fix        // an issue → a branch
-    case plan       // draft a roadmap / think, no code
-    case freeform   // arbitrary prompt in a project
-    case cycle      // one iteration of a build loop
+    case fix
+    case plan
+    case freeform
+    case cycle
 }
 
 public enum RunStatus: String, Codable, Sendable, CaseIterable {
-    case queued      // waiting for a scheduler slot
-    case running     // agent is live in a terminal
-    case verifying   // agent exited; the gate is running
-    case finishing   // gate passed; merging / opening the PR
-    case awaiting    // agent stopped and asked a question
+    case queued
+    case running
+    case verifying
+    case finishing
+    case awaiting
     case succeeded
     case failed
-    case abandoned   // stopped by a human
+    case abandoned
 
     public var isTerminal: Bool {
         switch self {
@@ -138,11 +125,8 @@ public enum RunStatus: String, Codable, Sendable, CaseIterable {
     }
 }
 
-/// What the agent itself reports, by writing `result.json` into its run dir.
-/// A file, not scraped terminal output: every harness can write a file, and it
-/// survives the window closing.
 public struct AgentResult: Codable, Sendable, Equatable {
-    public var outcome: String            // "done" | "needs-input" | "blocked"
+    public var outcome: String
     public var summary: String?
     public var question: String?
     public var filesChanged: [String]?
@@ -194,32 +178,21 @@ public struct Run: Codable, Sendable, Equatable, Identifiable {
     public var exitCode: Int32?
     public var verify: VerifyOutcome?
     public var result: AgentResult?
-    /// Human-facing explanation of a failure, or of what Zero did at the finish.
+
     public var note: String?
     public var mergedInto: String?
-    /// The merge commit, so "undo this fix" is a `git revert -m 1` away.
+
     public var mergeCommit: String?
-    /// Inbox dismissal. Terminal runs stay on disk; this hides them from the queue.
+
     public var acknowledged: Bool
     public var prompt: String?
-    /// The harness's own conversation id, so the thinking behind a fix can be
-    /// reopened instead of re-read. Set at dispatch for harnesses that accept
-    /// one, discovered at exit for the ones that don't.
+
     public var sessionId: String?
-    /// Whether this branch still merges into its base, and which two commits
-    /// that was decided about. Filled in by the daemon for runs waiting on a
-    /// human, so a client can render `review` or `conflicts` without shelling
-    /// out to git per row. See `MergeVerdict`.
+
     public var merge: MergeVerdict?
-    /// The run this one was sent in to rescue. Set only on a `resolve`.
+
     public var resolveOf: String?
-    /// How a resolve run got its context: `resumed` — the original conversation
-    /// was reopened, so the agent remembers why it wrote those lines; `fresh` —
-    /// the harness had lost the session and a new agent read the branch cold.
-    ///
-    /// Recorded because the two are not worth the same. A resolution by an
-    /// agent that never saw the original reasoning is a guess made carefully,
-    /// and the person reviewing it should be able to tell.
+
     public var resumeMode: String?
 
     public init(id: String, projectId: String, projectName: String, kind: RunKind,
@@ -269,8 +242,6 @@ public struct Run: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-// MARK: - Ideas
-
 public struct Idea: Codable, Sendable, Equatable, Identifiable {
     public var id: String
     public var title: String
@@ -291,8 +262,6 @@ public struct Idea: Codable, Sendable, Equatable, Identifiable {
         self.path = path
     }
 }
-
-// MARK: - Proposals (what an AI operator files instead of a run)
 
 public struct Proposal: Codable, Sendable, Equatable, Identifiable {
     public enum State: String, Codable, Sendable { case pending, accepted, dismissed }
@@ -324,26 +293,14 @@ public struct Proposal: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-// MARK: - Inbox
-
-/// The Needs-You queue. Five kinds, decisions only — never status. If an item
-/// doesn't need a human, it does not belong here.
 public struct InboxItem: Codable, Sendable, Equatable, Identifiable {
-    /// The five, in the words a person would use.
-    ///
-    /// `ready` and `landed` were the first two names and both failed the
-    /// read-aloud test: `ready` said nothing about who it was waiting on, and
-    /// `landed` was jargon for a thing everyone already calls a merge. What is
-    /// waiting on you is `review`; what went in is `merged`.
     public enum Kind: String, Codable, Sendable {
-        case question    // an agent stopped and asked
-        case failed      // the run or the verification gate went red
-        case merged      // a fix merged / a PR is open — read it or undo it
-        case review      // verified, waiting for you
-        case proposal    // an operator suggests work
+        case question
+        case failed
+        case merged
+        case review
+        case proposal
 
-        /// Runs on disk and `notifyOn` in config.json were written with the old
-        /// words and are not worth breaking someone's inbox over.
         public static func canonical(_ raw: String) -> String {
             switch raw {
             case "landed": return Kind.merged.rawValue
@@ -388,8 +345,6 @@ public struct InboxItem: Codable, Sendable, Equatable, Identifiable {
     }
 }
 
-// MARK: - Events
-
 public struct ZeroEvent: Codable, Sendable {
     public var type: String
     public var at: Date
@@ -409,10 +364,8 @@ public struct ZeroEvent: Codable, Sendable {
     }
 }
 
-// MARK: - Wire types
-
 public struct IssueDTO: Codable, Sendable, Equatable, Identifiable {
-    public var id: String          // stable: project id + path hash
+    public var id: String
     public var projectId: String
     public var projectName: String
     public var title: String

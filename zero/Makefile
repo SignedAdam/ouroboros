@@ -15,17 +15,9 @@ build:
 test:
 	swift test
 
-## ouro + ourod onto PATH. The two binaries must land in the SAME directory:
-## the daemon finds the shim as its sibling, which is what makes runs work when
-## the whole thing was launched from Finder with no shell PATH.
-## The toolbelt ships with the product rather than beside it: every dispatched
-## agent gets these on PATH, so "fix the button" can be verified by looking at
-## the button instead of at the diff.
-##
-## `rm` before `cp`, never `cp -f`. Overwriting a code-signed Mach-O in place
-## invalidates its signature and macOS SIGKILLs it on the next exec — which
-## shows up as agents that launch and vanish with an empty log, not as anything
-## resembling a signing error. Replacing the inode keeps the signature intact.
+## ouro and ourod must land in the same directory: the daemon resolves the shim
+## as its sibling. `rm` before `cp`, never `cp -f`: overwriting a code-signed
+## Mach-O in place invalidates its signature, and macOS then SIGKILLs it on exec.
 install: build app
 	mkdir -p "$(BIN)"
 	rm -f "$(BIN)/ouro" "$(BIN)/ourod"
@@ -45,9 +37,6 @@ install: build app
 	@echo "    open \"$(APP)\"                    # menu bar + ⌥Space"
 	@echo ""
 
-## A minimal bundle so the menu-bar app behaves like an app: no dock icon
-## (LSUIElement), a real bundle id, and both CLI binaries inside so the app can
-## start and drive the daemon on its own.
 app: build
 	rm -rf "$(APP)"
 	mkdir -p "$(APP)/Contents/MacOS"

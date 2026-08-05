@@ -1,16 +1,13 @@
 import Foundation
 import ZeroCore
 
-// MARK: - Arguments
-
 struct Args {
     var command: String = ""
     var positional: [String] = []
     var flags: [String: String] = [:]
-    /// Everything after a bare `--`, untouched (the shim's agent argv).
+
     var rest: [String] = []
 
-    /// Flags that consume the next token. Everything else is a boolean.
     static let valueFlags: Set<String> = [
         "p", "project", "t", "title", "a", "agent", "finish", "n", "lines", "status",
         "dir", "desc", "description", "github", "roadmap", "home", "source", "limit",
@@ -20,8 +17,7 @@ struct Args {
     static func parse(_ argv: [String]) -> Args {
         var args = Args()
         var index = 0
-        // The command is the first bare word wherever it appears — global flags
-        // like `--home` may legitimately precede it.
+
         var positionals: [String] = []
         while index < argv.count {
             let token = argv[index]
@@ -80,8 +76,6 @@ struct Args {
     }
 }
 
-// MARK: - Output
-
 enum Out {
     static func say(_ s: String = "") { print(s) }
 
@@ -90,7 +84,7 @@ enum Out {
     }
 
     static func ok(_ s: String) { print(Ansi.green("✓ ") + s) }
-    /// Not a failure, but not a yes either. `merge-check` needs a third answer.
+
     static func warn(_ s: String) { print(Ansi.yellow("! ") + s) }
     static func info(_ s: String) { print(Ansi.dim(s)) }
 
@@ -103,7 +97,6 @@ enum Out {
         Ansi.orange("◍")
     }
 
-    /// The banner. Same word-art as the cinema splash — one system, one face.
     static func banner() {
         print("")
         print("  " + Ansi.orange("█▀█ █ █ █▀▄ █▀█ ██▄ █▀█ █▀▄ █▀█ ▄▀▀"))
@@ -185,20 +178,13 @@ enum Fmt {
     }
 }
 
-// MARK: - Client
-
 enum Zero0 {
     static var homeOverride: String?
 
-    /// `main.swift` exports `OUROBOROS_HOME` before anything else runs, so
-    /// `Paths.socket` already accounts for `--home` (including its long-path
-    /// fallback). Recomputing the path here would reintroduce that bug.
     static func client() -> ZeroClient {
         ZeroClient(socketPath: Paths.socket)
     }
 
-    /// Talk to the daemon, starting it if it isn't up. The CLI should never make
-    /// the user think about a background process.
     static func connected(autostart: Bool = true) -> ZeroClient {
         let c = client()
         if c.isUp { return c }

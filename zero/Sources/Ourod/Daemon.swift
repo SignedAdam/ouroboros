@@ -2,9 +2,6 @@ import Foundation
 import ZeroCore
 import Ouroboros
 
-/// `ourod` — the only writer of run state, the only thing that spawns agents,
-/// and the single implementation behind every face. The CLI and the menu-bar
-/// app are HTTP clients of this file and have no other powers.
 final class Daemon: @unchecked Sendable {
     let config: Config
     let registry: Registry
@@ -36,8 +33,6 @@ final class Daemon: @unchecked Sendable {
             events: events, notifier: notifier, ouroPath: Daemon.locateOuro(), home: Paths.home)
     }
 
-    /// The shim is `ouro run-shim`, spawned from a terminal that may not have
-    /// the user's PATH. Prefer the sibling of this binary.
     static func locateOuro() -> String {
         let argv0 = CommandLine.arguments.first ?? "ourod"
         let resolved = (argv0 as NSString).isAbsolutePath
@@ -49,8 +44,6 @@ final class Daemon: @unchecked Sendable {
         return Shell.which("ouro") ?? "ouro"
     }
 
-    // MARK: - lifecycle
-
     func start() throws {
         writePidFile()
         let server = HTTPServer(token: nil) { [weak self] request in
@@ -59,8 +52,6 @@ final class Daemon: @unchecked Sendable {
         }
         try server.listenUnix(path: Paths.socket)
         if let port = config.httpPort {
-            // Loopback listener is token-gated in the client; the socket is the
-            // trusted local path.
             try? server.listenLoopback(port: port)
         }
         server.start()
@@ -99,11 +90,6 @@ final class Daemon: @unchecked Sendable {
         FileHandle.standardError.write(Data(line.utf8))
     }
 
-    // MARK: - resolution helpers
-
-    /// Project resolution, in order: explicit name → the repo containing `cwd`
-    /// → most recently used. An unregistered git repo under `cwd` registers
-    /// itself, so `ouro i` works the first time you use it in a new project.
     func resolveProject(_ name: String?, cwd: String?) -> Project? {
         if let name, !name.isEmpty {
             return registry.find(name)
@@ -121,8 +107,6 @@ final class Daemon: @unchecked Sendable {
         guard let raw else { return nil }
         return Finish(rawValue: raw)
     }
-
-    // MARK: - router
 
     func route(_ request: HTTPRequest) -> HTTPResponse {
         let segments = request.path.split(separator: "/").map(String.init)
@@ -156,8 +140,6 @@ final class Daemon: @unchecked Sendable {
             return .error("no route for \(method) \(request.path)", status: 404)
         }
     }
-
-    // MARK: projects
 
     private func routeProjects(_ method: String, _ path: [String],
                                _ request: HTTPRequest) -> HTTPResponse {
@@ -214,8 +196,7 @@ final class Daemon: @unchecked Sendable {
             if let v = body.protectedPaths { project.policy.protectedPaths = v }
             if let v = body.favourite {
                 project.favourite = v
-                // Pinning something you had hidden is a change of mind, and
-                // leaving it hidden would make the pin do nothing.
+
                 if v { project.hidden = false }
             }
             if let v = body.hidden { project.hidden = v }
@@ -242,10 +223,6 @@ final class Daemon: @unchecked Sendable {
         }
     }
 
-    /// Scaffold a project that does not exist yet — directory, README, git,
-    /// optionally a GitHub repo and an AI-drafted roadmap. `POST /v1/projects`
-    /// adopts a directory; this one brings it into being, so the menu-bar app
-    /// gets `ouro new` without reimplementing any of it.
     private func createProject(_ body: API.CreateProject) -> HTTPResponse {
         let name = body.name.trimmingCharacters(in: .whitespacesAndNewlines)
         let dir = Registry.normalize(
@@ -278,9 +255,6 @@ final class Daemon: @unchecked Sendable {
         var said = ["created \(name) at \(dir)"]
 
         if let visibility = body.github, visibility == "public" || visibility == "private" {
-            // A missing or unauthenticated `gh` must not cost you the project you
-            // just scaffolded: the directory and its history are already real, and
-            // `gh repo create --source .` works just as well tomorrow.
             let created = Shell.run(["gh", "repo", "create", name, "--\(visibility)",
                                      "--source", ".", "--push"],
                                     cwd: dir, login: true, timeout: 120)
@@ -309,15 +283,12 @@ final class Daemon: @unchecked Sendable {
         return .json(API.ProjectCreated(project: project, run: run, message: message), status: 201)
     }
 
-    /// The brief `ouro new --roadmap ai` sends. The schema is not decoration —
-    /// an autonomous loop reads these task blocks back out of the file.
     static func roadmapPrompt(name: String, description: String) -> String {
         """
         Draft the development roadmap for a new project called "\(name)".
 
         \(description.isEmpty ? "" : "What it is: \(description)\n")
         Write it to docs/ROADMAP.md using this exact schema, which an autonomous loop reads:
-
         ## Phase 1 — <title>
 
         **Goal:** <one paragraph>
@@ -340,8 +311,6 @@ final class Daemon: @unchecked Sendable {
         Commit the roadmap. Do not write any application code in this run.
         """
     }
-
-    // MARK: issues
 
     private func routeIssues(_ method: String, _ path: [String],
                              _ request: HTTPRequest) -> HTTPResponse {
@@ -423,13 +392,7 @@ final class Daemon: @unchecked Sendable {
             guard let (project, issue) = issues.find(path[1]) else {
                 return .error("no such issue", status: 404)
             }
-            // Delete removes. It used to move the file to `.issues/cancelled`,
-            // which meant the row stayed in the drawer and the thing you had
-            // just deleted went on being listed — reported as a bug, and it is
-            // one: an action's name is a promise about what it does.
-            //
-            // `cancelled` survives as a status for a *run* somebody stopped.
-            // `?keep=1` is the old behaviour for anyone who wants the trail.
+
             if request.q("keep") == "1" {
                 guard let moved = issues.setStatus(project: project, issue: issue,
                                                    status: .cancelled)
@@ -440,9 +403,7 @@ final class Daemon: @unchecked Sendable {
             guard (try? FileManager.default.removeItem(atPath: file)) != nil else {
                 return .error("could not delete that issue")
             }
-            // The runs about it go too. They are terminal records of work on a
-            // sentence that no longer exists, and leaving them in the inbox
-            // would put the deleted issue back in front of you by another door.
+
             let name = (file as NSString).lastPathComponent
             for run in runs.all() where run.projectId == project.id
                 && run.issuePath.map({ ($0 as NSString).lastPathComponent }) == name {
@@ -454,8 +415,6 @@ final class Daemon: @unchecked Sendable {
             return .error("no route", status: 404)
         }
     }
-
-    // MARK: runs
 
     private func routeRuns(_ method: String, _ path: [String],
                            _ request: HTTPRequest) -> HTTPResponse {
@@ -499,9 +458,7 @@ final class Daemon: @unchecked Sendable {
 
         case ("GET", 3) where path[2] == "diff":
             guard let run = runs.get(path[1]) else { return .error("no such run", status: 404) }
-            // Structured is the contract; `?format=text` is the old blob, kept
-            // because the human `ouro diff` prints git's own output and should
-            // go on printing exactly that.
+
             if request.q("format") == "text" {
                 return .json(API.TextResponse(runId: run.id, text: supervisor.diff(run.id)))
             }
@@ -532,10 +489,6 @@ final class Daemon: @unchecked Sendable {
                 supervisor.acknowledge(run.id)
                 return .json(API.Message(message: "acknowledged"))
             case "merge":
-                // A refused merge is a 409 carrying the reason, the same as
-                // `resolve`. Returning the unchanged run with a 200 made a
-                // refusal look exactly like a success to every caller that was
-                // not the inbox.
                 let (merged, refused) = supervisor.mergeNow(run.id)
                 guard let merged else { return .error(refused ?? "could not merge") }
                 if let refused { return .error(refused, status: 409) }
@@ -545,21 +498,13 @@ final class Daemon: @unchecked Sendable {
                 guard let updated else { return .error(message) }
                 return .json(API.Message(ok: updated.mergeCommit == nil, message: message))
             case "rebase":
-                // The action a run whose branch no longer merges is offered
-                // instead of the merge. It says so when it cannot: a rebase
-                // that needs a person is not a failure to hide behind a spinner.
                 let (ok, message) = supervisor.rebase(run.id)
                 return .json(API.Message(ok: ok, message: message))
             case "resolve":
-                // Put the agent that wrote the branch back on it, with the
-                // conflict report as its first message. Refused with the reason
-                // when there is nothing to resolve or no conversation to
-                // reopen — an action that cannot work must not be offered.
                 let (next, message) = supervisor.resolve(run.id)
                 guard let next else { return .error(message, status: 409) }
                 return .json(next, status: 201)
             case "discard":
-                // Only ever on a branch the code has checked is spent.
                 let (ok, message) = supervisor.discard(run.id)
                 guard ok else { return .error(message, status: 409) }
                 return .json(API.Message(message: message))
@@ -585,10 +530,6 @@ final class Daemon: @unchecked Sendable {
                                                          prompt: run.prompt ?? run.title,
                                                          options: .init(agent: run.agent)), status: 201)
             case "resume":
-                // Reopen the agent's own conversation in a terminal. Refused
-                // rather than faked when there is nothing to reopen: a window
-                // that opens onto an error is worse than a menu item that
-                // never appeared.
                 guard let (argv, cwd) = supervisor.resumeInvocation(run.id) else {
                     let harness = Harness.of(agent: run.agent,
                                              template: config.agentTemplate(run.agent))
@@ -604,7 +545,6 @@ final class Daemon: @unchecked Sendable {
             }
 
         case ("POST", 4) where path[2] == "shim":
-            // Internal: the shim reporting from inside the terminal.
             guard runs.get(path[1]) != nil else { return .error("no such run", status: 404) }
             if path[3] == "started", let body = request.decode(API.ShimStarted.self) {
                 supervisor.shimStarted(path[1], pid: body.pid)
@@ -620,8 +560,6 @@ final class Daemon: @unchecked Sendable {
             return .error("no route", status: 404)
         }
     }
-
-    // MARK: ideas
 
     private func routeIdeas(_ method: String, _ path: [String],
                             _ request: HTTPRequest) -> HTTPResponse {
@@ -677,8 +615,6 @@ final class Daemon: @unchecked Sendable {
             return .error("no route", status: 404)
         }
     }
-
-    // MARK: proposals
 
     private func routeProposals(_ method: String, _ path: [String],
                                 _ request: HTTPRequest) -> HTTPResponse {
@@ -738,11 +674,6 @@ final class Daemon: @unchecked Sendable {
         }
     }
 
-    // MARK: setup & self-update
-
-    /// First run, in one call: scan the roots, adopt every repo under them, and
-    /// say which harnesses are actually installed — the two things that decide
-    /// whether the next command the user types works.
     private func setup(_ request: HTTPRequest) -> HTTPResponse {
         let body = request.decode(API.SetupRequest.self) ?? API.SetupRequest()
         var roots = body.roots ?? config.autoDiscoverRoots
@@ -755,9 +686,6 @@ final class Daemon: @unchecked Sendable {
             let found = Registry.discover(in: Registry.normalize(root))
             scanned += found.count
             for repo in found where seen.insert(Registry.normalize(repo)).inserted {
-                // Count only what this call added. `register` happily returns an
-                // already-adopted project, and reporting those as new makes the
-                // number lie every time setup is run twice.
                 guard registry.byPath(repo) == nil else { continue }
                 if let project = registry.register(path: repo) { registered.append(project) }
             }
@@ -774,13 +702,6 @@ final class Daemon: @unchecked Sendable {
                                        agentsAvailable: agents, message: message))
     }
 
-    /// Pull the checkout Zero was built from and reinstall it.
-    ///
-    /// `make install` does the replacement, and it must: it removes each binary
-    /// before copying the new one. Overwriting a running, code-signed Mach-O in
-    /// place invalidates the signature and macOS SIGKILLs the next exec — which
-    /// surfaces as agents that launch and vanish with an empty log, nothing that
-    /// looks remotely like a signing problem. Never reimplement that copy here.
     private func selfUpdate() -> HTTPResponse {
         func no(_ message: String, from: String = "", to: String = "") -> HTTPResponse {
             .json(API.UpdateResponse(ok: false, fromCommit: from, toCommit: to, message: message))
@@ -795,8 +716,6 @@ final class Daemon: @unchecked Sendable {
         let from = git.run(["rev-parse", "--short", "HEAD"], timeout: 15).trimmed
         let pull = git.run(["pull", "--ff-only"], timeout: 300)
         guard pull.ok else {
-            // Dirty tree, diverged history, no network. Building an unknown state
-            // is worse than not updating, so stop here with git's own words.
             return no("git pull --ff-only failed in \(repo):\n\(pull.trimmed.suffix(800))",
                       from: from, to: from)
         }
@@ -813,8 +732,7 @@ final class Daemon: @unchecked Sendable {
         }
 
         log("updated \(from) → \(to) — exiting so the launcher starts the new binary")
-        // Exit only after the response is on the wire: the caller has to learn it
-        // is coming back before the socket dies with the process.
+
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.5) { self.stop(); exit(0) }
         return .json(API.UpdateResponse(ok: true, fromCommit: from, toCommit: to,
                                         message: "updated \(from) → \(to), restarting",
@@ -831,22 +749,18 @@ final class Daemon: @unchecked Sendable {
         return project.map { Registry.normalize($0.path) }
     }
 
-    /// The SPM package lives in `<repo>/zero`, but `repoPath` may already point
-    /// at the package itself — both are things a person would reasonably set.
     static func packageDir(_ repo: String) -> String {
         let nested = (repo as NSString).appendingPathComponent("zero")
         let makefile = (nested as NSString).appendingPathComponent("Makefile")
         return FileManager.default.fileExists(atPath: makefile) ? nested : repo
     }
 
-    /// `~/dev` reads better than `/Users/you/dev` in a one-line summary.
     static func tildeify(_ path: String) -> String {
         let home = NSHomeDirectory()
         guard path == home || path.hasPrefix(home + "/") else { return path }
         return "~" + String(path.dropFirst(home.count))
     }
 
-    /// git and gh answer in paragraphs; a `message` is one line.
     static func oneLine(_ text: String, limit: Int = 160) -> String {
         let flat = text.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -855,18 +769,10 @@ final class Daemon: @unchecked Sendable {
         return String(flat.prefix(limit))
     }
 
-    // MARK: composed reads
-
     func inbox() -> [InboxItem] {
         Inbox.build(runs: checkedRuns(), proposals: proposals.all())
     }
 
-    /// Every run, with a merge verdict attached to the ones a client might
-    /// render as waiting for you.
-    ///
-    /// This is the whole point of the check: no face of this product may call a
-    /// branch reviewable without having tried to merge it. Cached against the
-    /// pair of shas, so a poll that changes nothing does not fork git.
     func checkedRuns() -> [Run] {
         runs.all().map { run in
             guard let verdict = supervisor.mergeCheckIfPending(run) else { return run }
@@ -908,22 +814,11 @@ final class Daemon: @unchecked Sendable {
                 running: all.filter { $0.status.isActive && $0.status != .queued }.count,
                 tasks: recents.reduce(0) { $0 + $1.openCount },
                 projects: registry.all().count,
-                // Oldest first: a tape is read left to right, and the newest
-                // run belongs at the end where the eye lands.
+
                 tape: Array(all.prefix(12)).reversed().map(\.status)),
             agents: agentList())
     }
 
-    /// Three kinds of recent, in one ordered list, each project appearing once
-    /// in the highest section that claims it:
-    ///
-    ///   favourites — pinned by hand, shown however cold they are
-    ///   ouroboros  — you have filed or run something here
-    ///   git        — you have only committed here; Ouroboros has never been used
-    ///
-    /// Hidden projects are dropped until `Registry.touch` clears the flag, and
-    /// so are directories that no longer exist: a recents list is a set of
-    /// offers, and offering something that isn't there is a bug.
     private func recentProjects() -> [Project] {
         let fm = FileManager.default
         func live(_ projects: [Project]) -> [Project] {
@@ -940,9 +835,6 @@ final class Daemon: @unchecked Sendable {
         return favourites + Array(used) + Array(byGit)
     }
 
-    /// The harnesses that could actually be dispatched to right now. Anything
-    /// whose CLI is missing is reported unavailable rather than hidden, so
-    /// "there is no codex here" is a visible fact instead of a silent absence.
     func agentList() -> [AgentInfo] {
         let names = Set(config.agents.keys).union(Config.defaultAgents.keys).sorted()
         return names.map { name in

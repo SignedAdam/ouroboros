@@ -2,9 +2,6 @@ import Foundation
 import ZeroCore
 
 enum Commands {
-
-    // MARK: - overview (bare `ouro`)
-
     static func overview(_ args: Args) {
         let client = Zero0.connected()
         guard let snapshot = try? client.get("/v1/snapshot", as: API.Snapshot.self) else {
@@ -50,8 +47,6 @@ enum Commands {
         print("  " + Ansi.dim("ouro i \"what's wrong\"   ·   ouro inbox   ·   ouro runs -w"))
         print("")
     }
-
-    // MARK: - issues
 
     static func issue(_ args: Args) {
         var body = args.joined
@@ -119,7 +114,6 @@ enum Commands {
         var issueId = args.positional.first
 
         if issueId == nil {
-            // No id: the newest open issue in the project you're standing in.
             let project = args.flag("p", "project")
             var path = "/v1/issues?status=new"
             if let project { path += "&project=\(escape(project))" }
@@ -145,10 +139,6 @@ enum Commands {
         }
     }
 
-    /// Confirm a piece of work is really finished: the issue file moves to
-    /// `.issues/done` and the run behind it stops asking for attention.
-    /// Ouroboros resolves an issue when its own gate goes green; this is a
-    /// human saying so, which is not the same claim.
     static func done(_ args: Args) {
         let client = Zero0.connected()
         guard let issueId = args.positional.first else {
@@ -158,8 +148,7 @@ enum Commands {
             let issue: IssueDTO = try client.patch("/v1/issues/\(issueId)",
                                                    API.PatchIssue(status: "done"))
             print("  \(Out.mark()) \(Ansi.bold("done"))  \(Ansi.dim(issue.projectName)) · \(issue.title)")
-            // Whatever ran against it is now noise in the inbox. Matched on the
-            // file's name, not its path: resolving it just moved the file.
+
             let name = (issue.path as NSString).lastPathComponent
             if !name.isEmpty,
                let list = try? client.get("/v1/runs?project=\(escape(issue.projectId))",
@@ -174,9 +163,6 @@ enum Commands {
         }
     }
 
-    /// Delete removes. `--keep` files it under `.issues/cancelled` instead, for
-    /// anyone who wants the trail from "half a thought at midnight" to "never
-    /// mind" — but that is the exception now, and it is spelled out.
     static func deleteIssue(_ args: Args) {
         let client = Zero0.connected()
         guard let issueId = args.positional.first else {
@@ -197,8 +183,6 @@ enum Commands {
         }
     }
 
-    // MARK: - runs
-
     static func runs(_ args: Args) {
         let client = Zero0.connected()
         if args.bool("w", "watch") { watchRuns(client); return }
@@ -207,7 +191,7 @@ enum Commands {
 
     private static func renderRuns(_ client: ZeroClient, args: Args) {
         var path = "/v1/runs?limit=\(args.flag("limit").flatMap(Int.init) ?? 25)"
-        if !args.bool("all", "a") && args.flag("status") == nil { /* everything recent */ }
+        if !args.bool("all", "a") && args.flag("status") == nil {  }
         if let status = args.flag("status") { path += "&status=\(escape(status))" }
         if let project = args.flag("p", "project") { path += "&project=\(escape(project))" }
 
@@ -227,8 +211,6 @@ enum Commands {
         print("")
     }
 
-    /// Live table. Redraws on a short timer — the point is that ten concurrent
-    /// agents feel like a control room rather than ten lost terminals.
     private static func watchRuns(_ client: ZeroClient, once runId: String? = nil) {
         let hideCursor = "\u{1B}[?25l", showCursor = "\u{1B}[?25h", clear = "\u{1B}[H\u{1B}[2J"
         print(hideCursor, terminator: "")
@@ -309,9 +291,6 @@ enum Commands {
         guard let runId = args.positional.first else { Out.die("usage: ouro diff <run-id>") }
         let client = Zero0.connected()
 
-        // `--json` is the endpoint's own payload, printed. Not re-encoded from
-        // a decoded value: what a script sees and what the diff surface reads
-        // then cannot drift apart.
         if args.has("json") {
             guard let (status, data) = try? client.sendRaw("GET", "/v1/runs/\(runId)/diff"),
                   (200..<300).contains(status) else { Out.die("no such run") }
@@ -320,9 +299,6 @@ enum Commands {
             return
         }
 
-        // The human form is git's own output, unchanged. `?format=text` asks
-        // the daemon for exactly that rather than rebuilding a patch from the
-        // structure and getting the index lines subtly wrong.
         guard let response = try? client.get("/v1/runs/\(runId)/diff?format=text",
                                              as: API.TextResponse.self) else {
             Out.die("no such run")
@@ -331,10 +307,7 @@ enum Commands {
             print(Ansi.dim("  (no changes on that branch)"))
             return
         }
-        // One line of shape before the wall of text, from the same structured
-        // read the GUI gets. On stderr, deliberately: `ouro diff > patch` has
-        // always produced a file git can apply, and a summary line on stdout
-        // would quietly stop that being true.
+
         if let report = try? client.get("/v1/runs/\(runId)/diff", as: DiffReport.self),
            !report.isEmpty {
             FileHandle.standardError.write(Data((Ansi.dim("  " + report.summary) + "\n\n").utf8))
@@ -342,8 +315,6 @@ enum Commands {
         print(response.text)
     }
 
-    /// Would this branch still go in? The same test the drawer reads off the
-    /// snapshot, so the CLI and the panel cannot disagree about a merge.
     static func mergeCheck(_ args: Args) {
         guard let runId = args.positional.first else {
             Out.die("usage: ouro merge-check <run-id>")
@@ -358,9 +329,7 @@ enum Commands {
             Out.warn("could not tell: \(error)" + pair)
             return
         }
-        // Asked before "does it merge", because a branch whose work is already
-        // on the base conflicts exactly like one whose work is not, and the two
-        // want opposite things from a person.
+
         if let staleness = verdict.staleness, staleness.spent {
             Out.warn("nothing left on \(verdict.branch)" + pair)
             print(Ansi.dim("    " + staleness.reason))
@@ -426,8 +395,6 @@ enum Commands {
         }
     }
 
-    // MARK: - inbox
-
     static func inbox(_ args: Args) {
         let client = Zero0.connected()
         guard let list = try? client.get("/v1/inbox", as: API.InboxList.self) else {
@@ -468,8 +435,6 @@ enum Commands {
         }
     }
 
-    // MARK: - ideas
-
     static func idea(_ args: Args) {
         var body = args.joined
         if body.isEmpty { body = readStdin() }
@@ -492,8 +457,6 @@ enum Commands {
     static func ideas(_ args: Args) {
         let client = Zero0.connected()
 
-        // `ouro drop` already means "clear this run from the inbox", so dropping
-        // an idea lives here as a subcommand rather than fighting for that verb.
         if args.positional.first == "drop", args.positional.count > 1 {
             do {
                 let message: API.Message = try client.post(
@@ -523,8 +486,6 @@ enum Commands {
         print("")
     }
 
-    /// The panel has `/hotkey`; the CLI has to have it too, or the GUI has a
-    /// power the CLI lacks and the whole "one control plane" claim is a lie.
     static func hotkey(_ args: Args) {
         var config = Config.load()
         guard let combo = args.positional.first else {
@@ -558,9 +519,6 @@ enum Commands {
         }
     }
 
-    // MARK: - projects
-
-    /// Everything known about one run, including the conversation behind it.
     static func show(_ args: Args) {
         guard let id = args.positional.first else { Out.die("usage: ouro show <run>") }
         let client = Zero0.connected()
@@ -591,11 +549,6 @@ enum Commands {
         print("")
     }
 
-    /// Reopen a run's own conversation in a terminal.
-    ///
-    /// The daemon does the launching, not this process: the CLI may be running
-    /// inside the very window you are trying to leave, and the terminal a run
-    /// belongs to is the supervisor's business either way.
     static func resume(_ args: Args) {
         guard let id = args.positional.first else {
             Out.die("usage: ouro resume <run>   (ouro runs to list them)")
@@ -609,8 +562,6 @@ enum Commands {
         } catch { Out.die("\(error)") }
     }
 
-    /// Which harnesses this machine can actually dispatch to, and which of them
-    /// can be talked to again afterwards.
     static func agents(_ args: Args) {
         let client = Zero0.connected()
         guard let list = try? client.get("/v1/agents", as: API.AgentList.self) else {
@@ -678,9 +629,6 @@ enum Commands {
                 printProject(project)
             } catch { Out.die("\(error)") }
 
-        // Curation. The capture panel's favourites, hiding and per-project
-        // harness are these verbs — its menus are a second face on exactly
-        // this, never a private path.
         case "favourite", "favorite", "unfavourite", "unfavorite", "hide", "unhide":
             guard args.positional.count > 1 else {
                 Out.die("usage: ouro projects \(sub ?? "favourite") <id>")
@@ -757,10 +705,6 @@ enum Commands {
         print("    " + Ansi.dim(project.path))
     }
 
-    // MARK: - setup
-
-    /// The first thing a new user runs. The daemon does the scanning; this only
-    /// has to leave the reader knowing what exists now and what to type next.
     static func setup(_ args: Args) {
         let client = Zero0.connected()
         let root = args.positional.first ?? args.flag("root")
@@ -807,10 +751,6 @@ enum Commands {
         }
     }
 
-    // MARK: - new project
-
-    /// Scaffolding lives in the daemon — the app's new-project sheet posts to
-    /// this same endpoint, so there is one implementation of it rather than two.
     static func newProject(_ args: Args) {
         guard let name = args.positional.first else {
             Out.die("usage: ouro new <name> [--dir ~/dev/name] [--desc \"…\"] [--github private] [--roadmap ai] [--agent claude]")
@@ -829,8 +769,6 @@ enum Commands {
             Out.ok("created \(Ansi.bold(created.project.name))  \(Ansi.dim(created.project.path))")
             if !created.message.isEmpty { print("    " + Ansi.dim(created.message)) }
 
-            // --verify / --autonomy are policy, not scaffolding, so the create
-            // call doesn't carry them; the flags still have to work.
             if args.has("verify", "autonomy") {
                 _ = try? client.patch("/v1/projects/\(created.project.id)",
                                       API.PatchProject(verifyCmd: args.flag("verify"),
@@ -850,8 +788,6 @@ enum Commands {
             Out.die("\(error)")
         }
     }
-
-    // MARK: - daemon
 
     static func daemon(_ args: Args) {
         let sub = args.positional.first ?? "status"
@@ -888,12 +824,9 @@ enum Commands {
         }
     }
 
-    // MARK: - update
-
     static func update(_ args: Args) {
         let client = Zero0.connected()
-        // Read the pid first: a restarted daemon answers on the same socket, so
-        // "it replied" proves nothing — only a different pid does.
+
         let before = try? client.get("/v1/health", as: HealthDTO.self)
 
         let response: API.UpdateResponse
@@ -937,8 +870,6 @@ enum Commands {
         print("")
     }
 
-    // MARK: - proposals
-
     static func proposalAction(_ action: String, _ args: Args) {
         guard let id = args.positional.first else { Out.die("usage: ouro \(action) <proposal-id>") }
         let client = Zero0.connected()
@@ -954,8 +885,6 @@ enum Commands {
             }
         } catch { Out.die("\(error)") }
     }
-
-    // MARK: - helpers
 
     private static func finishFlag(_ args: Args) -> String? {
         if args.bool("pr") { return "pr" }

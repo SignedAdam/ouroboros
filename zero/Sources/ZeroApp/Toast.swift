@@ -4,15 +4,6 @@ import AVFoundation
 import ZeroCore
 import OuroborosUI
 
-/// The one moment Ouroboros is allowed to interrupt you.
-///
-/// Everything else in this product is pull: you press a key when you want it,
-/// the inbox waits until you look. A run landing is the exception, because it is
-/// the only event that happens while your attention is genuinely elsewhere and
-/// changes what is true about your code.
-///
-/// So: bottom-right, no focus stolen, no click required, gone in five seconds.
-/// It never becomes key, so it cannot interrupt typing in another app.
 @MainActor
 final class ToastCenter: NSObject {
     static let shared = ToastCenter()
@@ -20,12 +11,10 @@ final class ToastCenter: NSObject {
     private var panel: NSPanel?
     private var dismissTask: Task<Void, Never>?
     private var player: AVAudioPlayer?
-    /// Runs already announced, so a poll that re-sees the same landing is quiet.
+
     private var announced: Set<String> = []
     private var primed = false
 
-    /// The first snapshot after launch is history, not news. Without this,
-    /// starting the app replays every run that ever finished.
     func prime(with runs: [Run]) {
         guard !primed else { return }
         announced = Set(runs.map(\.id))
@@ -50,8 +39,6 @@ final class ToastCenter: NSObject {
         play(landed ? "landed" : nil)
     }
 
-    // MARK: presentation
-
     private func present<Content: View>(_ content: Content) {
         dismissTask?.cancel()
         panel?.orderOut(nil)
@@ -64,8 +51,7 @@ final class ToastCenter: NSObject {
         panel.isReleasedWhenClosed = false
         panel.backgroundColor = .clear
         panel.hasShadow = true
-        // Stays put across Space switches and never takes focus, so it can
-        // appear over full-screen work without yanking you out of it.
+
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.ignoresMouseEvents = false
 
@@ -115,7 +101,6 @@ final class ToastCenter: NSObject {
         player?.play()
     }
 
-    /// Running straight out of `.build` there is no bundle to look in.
     private static func developmentSound(_ name: String) -> URL? {
         let here = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
