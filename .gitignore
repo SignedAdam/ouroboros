@@ -7,3 +7,7 @@
 
 # Ouroboros run state: worktrees and per-repo scratch, never the repo
 .ouroboros/
+
+# Local working notes — never published
+.issues/
+.personal/

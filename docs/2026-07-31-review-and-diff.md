@@ -5,8 +5,8 @@ The operator, looking at the drawer after the rebuild:
 > "Some say 'landed' some say 'ready'. these statuses are too confusing and not self
 > evident. I suppose 'ready' are actually ready to be reviewed?"
 
-He is right, and the words are the smaller half of it. He then asked whether he could
-safely merge the two he saw marked ready. The answer was no: the one genuinely-ready run
+That is right, and the words are the smaller half of it. The follow-up question was whether
+the two runs marked ready were safe to merge. The answer was no: the one genuinely-ready run
 conflicts with `main` in three files, because it branched before the drawer rebuild landed
 and both touched the same views.
 
@@ -644,7 +644,7 @@ that capture found.
 **Not verified without the screen:** `DiffView` itself. Reaching its `diff` verb
 means hovering a row and clicking a small button, and the operator was typing into the
 panel at that moment — a live draft was in the field in the screenshot. Driving
-his session to look at a layout was the wrong trade. The two structural bugs above
+that session to look at a layout was the wrong trade. The two structural bugs above
 were found by reading, the data behind it is real and parsed by tested code, and
 the sheet's presentation and dismissal are three lines. Its **appearance** remains
 unlooked-at. The row verbs' click behaviour is likewise proven only at the API

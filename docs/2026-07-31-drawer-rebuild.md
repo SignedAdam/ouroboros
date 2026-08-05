@@ -46,7 +46,7 @@ left off.** Everything below follows from that. If a pixel does not serve it, cu
    > done, etc. And a way to see unfixed but filed issues. We need this, but it should be
    > ergonomic, aesthetic, and well designed with UX and UI in mind."
 
-   So, concretely, the drawer must let him:
+   So, concretely, the drawer must let you:
    - see recently started issues and their status
    - open any of them instantly in Claude Code or Codex
    - mark one off as confirmed done
