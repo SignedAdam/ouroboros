@@ -1,9 +1,15 @@
 # Ouroboros
 
+<p align="center">
+  <img src="docs/capture-panel.png" alt="The Ouroboros Zero capture panel: a &quot;what's wrong?&quot; field over a live list of projects, each row showing what it is carrying and how long ago" width="700">
+</p>
+
 In-app issue capture → coding agent. Your app gets a floating button; anyone using the
 app describes an issue; it's saved as a markdown file in `.issues/`; one click hands it
 to Claude Code or Codex in an isolated git worktree, running live in its own terminal
 window that closes when the agent finishes. File ten issues, fire ten agents, walk away.
+
+⌥Space from anywhere, type the thing, and an agent is on it — across every repo you own.
 
 ## Install it in your app
 
