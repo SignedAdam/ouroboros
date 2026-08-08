@@ -4,13 +4,35 @@ import AVFoundation
 import ZeroCore
 import OuroborosUI
 
+struct ToastContent: Equatable {
+    let title: String
+    let detail: String
+    let good: Bool
+}
+
+@MainActor
+final class ToastState: ObservableObject {
+    @Published var content: ToastContent
+    @Published var dwell = ToastDwell()
+    @Published var pinned = false
+    @Published var hovering = false
+
+    init(_ content: ToastContent) { self.content = content }
+}
+
 @MainActor
 final class ToastCenter: NSObject {
     static let shared = ToastCenter()
 
     private var panel: NSPanel?
-    private var dismissTask: Task<Void, Never>?
+    private var state: ToastState?
+    private var ticker: Task<Void, Never>?
     private var player: AVAudioPlayer?
+
+    private var waiting: [ToastContent] = []
+    private var grabbedAt: NSPoint?
+    private var grabbedFrom: NSPoint?
+    private var rememberedOrigin: NSPoint?
 
     private var announced: Set<String> = []
     private var primed = false
@@ -31,17 +53,30 @@ final class ToastCenter: NSObject {
 
     func show(_ run: Run) {
         let landed = run.status == .succeeded
-        present(ToastView(
+        play(landed ? "landed" : nil)
+        let content = ToastContent(
             title: run.title,
             detail: run.note ?? run.result?.summary ?? run.projectName,
-            project: run.projectName,
-            good: landed))
-        play(landed ? "landed" : nil)
+            good: landed)
+
+        // A pinned toast is being read. Later ones wait their turn instead of
+        // taking the panel out from under it.
+        if state?.pinned == true, panel?.isVisible == true {
+            waiting.append(content)
+            waiting = Array(waiting.suffix(3))
+        } else {
+            present(content)
+        }
     }
 
-    private func present<Content: View>(_ content: Content) {
-        dismissTask?.cancel()
+    private func present(_ content: ToastContent) {
+        ticker?.cancel()
         panel?.orderOut(nil)
+        grabbedAt = nil
+        grabbedFrom = nil
+
+        let state = ToastState(content)
+        self.state = state
 
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 380, height: 92),
@@ -55,14 +90,14 @@ final class ToastCenter: NSObject {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.ignoresMouseEvents = false
 
-        let hosting = NSHostingController(rootView: AnyView(content))
-        panel.contentViewController = hosting
-        panel.setContentSize(hosting.view.fittingSize)
+        let hosting = ToastHostingView(rootView: AnyView(ToastView(state: state)))
+        panel.contentView = hosting
+        panel.setContentSize(hosting.fittingSize)
 
-        if let frame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame {
-            let size = panel.frame.size
-            panel.setFrameOrigin(NSPoint(x: frame.maxX - size.width - 20,
-                                         y: frame.minY + 20))
+        if let origin = ToastPlacement.origin(remembered: rememberedOrigin,
+                                              size: panel.frame.size,
+                                              screens: screenFrames()) {
+            panel.setFrameOrigin(origin)
         }
 
         panel.alphaValue = 0
@@ -74,21 +109,99 @@ final class ToastCenter: NSObject {
         }
         self.panel = panel
 
-        dismissTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
-            guard !Task.isCancelled else { return }
-            self?.dismiss()
+        startTicking()
+    }
+
+    private func screenFrames() -> [CGRect] {
+        let others = NSScreen.screens.map(\.visibleFrame)
+        guard let main = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame else { return others }
+        return [main] + others
+    }
+
+    private func startTicking() {
+        ticker?.cancel()
+        ticker = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                guard !Task.isCancelled, let self, self.tick() else { return }
+            }
         }
     }
 
-    func dismiss() {
+    /// Answers whether the toast is still up. The pointer is polled rather than
+    /// tracked: the toast belongs to an app that is almost never the active one,
+    /// and SwiftUI's hover tracking stays asleep there.
+    private func tick() -> Bool {
+        guard let panel, let state else { return false }
+        hover(grabbedAt != nil || panel.frame.contains(NSEvent.mouseLocation))
+        guard state.dwell.hasExpired() else { return true }
+        dismiss()
+        return false
+    }
+
+    func hover(_ inside: Bool) {
+        guard let state, state.hovering != inside else { return }
+        state.hovering = inside
+        guard !state.pinned else { return }
+        if inside {
+            state.dwell.pause()
+        } else {
+            state.dwell.resume(atLeast: ToastDwell.hoverFloor)
+        }
+    }
+
+    func togglePin() {
+        guard let state else { return }
+        state.pinned.toggle()
+        if state.pinned {
+            state.dwell.pause()
+        } else {
+            state.dwell.restart()
+            if state.hovering { state.dwell.pause() }
+        }
+    }
+
+    /// Screen coordinates, not the gesture's own translation: the panel moves out
+    /// from under the pointer while the drag is live, which makes anything measured
+    /// inside the window walk away from the cursor.
+    func grab() {
         guard let panel else { return }
+        let mouse = NSEvent.mouseLocation
+        guard let start = grabbedAt, let from = grabbedFrom else {
+            grabbedAt = mouse
+            grabbedFrom = panel.frame.origin
+            return
+        }
+        panel.setFrameOrigin(NSPoint(x: from.x + mouse.x - start.x,
+                                     y: from.y + mouse.y - start.y))
+    }
+
+    func letGo() {
+        grabbedAt = nil
+        grabbedFrom = nil
+        rememberedOrigin = panel?.frame.origin
+    }
+
+    func dismiss() {
+        ticker?.cancel()
+        ticker = nil
+        state = nil
+        guard let panel else { return }
+        self.panel = nil
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.2
             panel.animator().alphaValue = 0
-        } completionHandler: {
-            MainActor.assumeIsolated { panel.orderOut(nil) }
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                panel.orderOut(nil)
+                self?.showNextWaiting()
+            }
         }
+    }
+
+    private func showNextWaiting() {
+        guard panel == nil, !waiting.isEmpty else { return }
+        present(waiting.removeFirst())
     }
 
     private func play(_ name: String?) {
@@ -109,42 +222,131 @@ final class ToastCenter: NSObject {
     }
 }
 
+/// A toast never becomes the key window, so without this the click that presses
+/// pin or close is spent waking the panel up.
+final class ToastHostingView: NSHostingView<AnyView> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 struct ToastView: View {
-    let title: String
-    let detail: String
-    let project: String
-    let good: Bool
+    @ObservedObject var state: ToastState
+
+    private var good: Bool { state.content.good }
+    private var accent: Color { good ? ouroOrange : Color(red: 1, green: 0.37, blue: 0.34) }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 11) {
-            OuroborosMark()
-                .foregroundStyle(good ? ouroOrange : Color(red: 1, green: 0.37, blue: 0.34))
-                .frame(width: 20, height: 20)
-                .padding(.top, 1)
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 11) {
+                OuroborosMark()
+                    .foregroundStyle(accent)
+                    .frame(width: 20, height: 20)
+                    .padding(.top, 1)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(good ? "landed" : "failed")
-                    .font(.system(size: 9, weight: .semibold))
-                    .kerning(0.8)
-                    .foregroundStyle(good ? ouroOrange : Color(red: 1, green: 0.37, blue: 0.34))
-                Text(title)
-                    .font(.system(size: 12, weight: .medium, design: .rounded))
-                    .lineLimit(1)
-                Text(detail)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(good ? "landed" : "failed")
+                        .font(.system(size: 9, weight: .semibold))
+                        .kerning(0.8)
+                        .foregroundStyle(accent)
+                    Text(state.content.title)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .lineLimit(1)
+                    Text(state.content.detail)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                }
+                Spacer(minLength: 0)
+
+                buttons
             }
-            Spacer(minLength: 0)
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 11)
+
+            clock
+                .padding(.horizontal, 14)
+                .padding(.bottom, 9)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
         .frame(width: 380, alignment: .leading)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 13, style: .continuous)
-                .strokeBorder((good ? ouroOrange : Color.red).opacity(0.22), lineWidth: 1))
-        .onTapGesture { ToastCenter.shared.dismiss() }
+                .strokeBorder(accent.opacity(state.pinned ? 0.5 : 0.22),
+                              lineWidth: state.pinned ? 1.4 : 1))
+        .animation(.easeOut(duration: 0.18), value: state.pinned)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 3)
+                .onChanged { _ in ToastCenter.shared.grab() }
+                .onEnded { _ in ToastCenter.shared.letGo() })
+        .onTapGesture {
+            guard !state.pinned else { return }
+            ToastCenter.shared.dismiss()
+        }
+    }
+
+    private var clock: some View {
+        ZStack(alignment: .leading) {
+            Capsule().fill(accent.opacity(0.12))
+            countdown
+        }
+        .frame(height: 2.5)
+        .help(state.pinned ? "pinned — this one stays until you close it"
+                           : "how long this stays on screen")
+    }
+
+    @ViewBuilder private var countdown: some View {
+        if state.pinned {
+            Capsule()
+                .fill(accent.opacity(0.3))
+                .transition(.opacity)
+        } else if state.dwell.isPaused {
+            rail(state.dwell.fractionLeft()).opacity(0.5)
+        } else {
+            TimelineView(.animation) { tick in
+                rail(state.dwell.fractionLeft(at: tick.date))
+            }
+        }
+    }
+
+    private func rail(_ left: Double) -> some View {
+        GeometryReader { size in
+            Capsule()
+                .fill(accent.opacity(0.85))
+                .frame(width: size.size.width * left)
+        }
+    }
+
+    private var buttons: some View {
+        HStack(spacing: 4) {
+            round("pin.fill", filled: state.pinned,
+                  help: state.pinned ? "unpin — the clock starts over"
+                                     : "pin — keep this up until you close it") {
+                ToastCenter.shared.togglePin()
+            }
+            round("xmark", filled: false, help: "close") {
+                ToastCenter.shared.dismiss()
+            }
+        }
+        .opacity(state.hovering || state.pinned ? 1 : 0.45)
+        .animation(.easeOut(duration: 0.15), value: state.hovering)
+    }
+
+    private func round(_ symbol: String,
+                       filled: Bool,
+                       help: String,
+                       action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 9, weight: .bold))
+                .foregroundStyle(filled ? accent : Color.secondary)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(filled ? accent.opacity(0.16)
+                                                 : Color.primary.opacity(0.06)))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
     }
 }
