@@ -36,7 +36,8 @@ final class DispatchArgvTests: XCTestCase {
         let argv = Agents.dispatchArgv(template: ["claude", "-p", "{prompt}"],
                                        prompt: "fix the button", sessionId: "abc-123",
                                        harness: .claude)
-        XCTAssertEqual(argv, ["claude", "--session-id", "abc-123", "-p", "fix the button"])
+        XCTAssertEqual(argv, ["claude", "--output-format", "stream-json", "--verbose",
+                              "--session-id", "abc-123", "-p", "fix the button"])
     }
 
     func testCodexIsLeftAlone() {
@@ -50,14 +51,43 @@ final class DispatchArgvTests: XCTestCase {
         let argv = Agents.dispatchArgv(
             template: ["claude", "--session-id={session}", "-p", "{prompt}"],
             prompt: "hello", sessionId: "abc-123", harness: .claude)
-        XCTAssertEqual(argv, ["claude", "--session-id=abc-123", "-p", "hello"])
+        XCTAssertEqual(argv, ["claude", "--output-format", "stream-json", "--verbose",
+                              "--session-id=abc-123", "-p", "hello"])
     }
 
     func testAnAlreadyPresentFlagIsNotDuplicated() {
         let argv = Agents.dispatchArgv(
             template: ["claude", "--session-id", "mine", "-p", "{prompt}"],
             prompt: "hello", sessionId: "ignored", harness: .claude)
-        XCTAssertEqual(argv, ["claude", "--session-id", "mine", "-p", "hello"])
+        XCTAssertEqual(argv, ["claude", "--output-format", "stream-json", "--verbose",
+                              "--session-id", "mine", "-p", "hello"])
+    }
+}
+
+final class StreamingFlagTests: XCTestCase {
+    func testAPrintingClaudeIsAskedToStream() {
+        XCTAssertEqual(Agents.streaming(["claude", "-p", "go"], harness: .claude),
+                       ["claude", "--output-format", "stream-json", "--verbose", "-p", "go"])
+    }
+
+    func testAChosenOutputFormatIsLeftAlone() {
+        let argv = ["claude", "--output-format=json", "-p", "go"]
+        XCTAssertEqual(Agents.streaming(argv, harness: .claude), argv)
+    }
+
+    func testVerboseIsNotAskedForTwice() {
+        XCTAssertEqual(Agents.streaming(["claude", "--verbose", "-p", "go"], harness: .claude),
+                       ["claude", "--output-format", "stream-json", "--verbose", "-p", "go"])
+    }
+
+    func testAnInteractiveClaudeKeepsItsOwnScreen() {
+        XCTAssertEqual(Agents.streaming(["claude", "--resume", "s1"], harness: .claude),
+                       ["claude", "--resume", "s1"])
+    }
+
+    func testOtherHarnessesAreNotToldClaudeFlags() {
+        XCTAssertEqual(Agents.streaming(["codex", "exec", "-p", "go"], harness: .codex),
+                       ["codex", "exec", "-p", "go"])
     }
 }
 
@@ -90,7 +120,8 @@ final class ResumeWithAPromptTests: XCTestCase {
         XCTAssertEqual(
             Agents.resumeArgv(harness: .claude, template: ["claude", "-p", "{prompt}"],
                               sessionId: "s1", prompt: "your branch no longer merges"),
-            ["claude", "--resume", "s1", "-p", "your branch no longer merges"])
+            ["claude", "--output-format", "stream-json", "--verbose",
+             "--resume", "s1", "-p", "your branch no longer merges"])
         XCTAssertEqual(
             Agents.resumeArgv(harness: .codex, template: ["codex", "exec", "{prompt}"],
                               sessionId: "s2", prompt: "your branch no longer merges"),
@@ -108,7 +139,8 @@ final class ResumeWithAPromptTests: XCTestCase {
         XCTAssertEqual(
             Agents.resumeArgv(harness: .claude, template: ["/opt/bin/claude", "-p", "{prompt}"],
                               sessionId: "s", prompt: "go"),
-            ["/opt/bin/claude", "--resume", "s", "-p", "go"])
+            ["/opt/bin/claude", "--output-format", "stream-json", "--verbose",
+             "--resume", "s", "-p", "go"])
     }
 
     func testNeitherShapeIsTheInteractiveOne() {
@@ -126,7 +158,7 @@ final class ResumeWithAPromptTests: XCTestCase {
         let argv = Agents.resumeArgv(harness: .claude, template: nil,
                                      sessionId: "s", prompt: seed)!
         XCTAssertEqual(argv.last, seed)
-        XCTAssertEqual(argv.count, 5)
+        XCTAssertEqual(argv.filter { $0 == seed }.count, 1)
     }
 }
 

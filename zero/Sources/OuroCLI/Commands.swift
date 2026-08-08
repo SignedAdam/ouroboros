@@ -265,26 +265,66 @@ enum Commands {
         let lines = args.flag("n", "lines").flatMap(Int.init) ?? 80
         let follow = args.bool("f", "follow")
 
-        var seen = ""
-        repeat {
-            guard let response = try? client.get("/v1/runs/\(runId)/log?lines=\(follow ? 4000 : lines)",
-                                                 as: API.TextResponse.self) else {
-                Out.die("no such run")
-            }
-            if follow {
-                if response.text.count > seen.count {
-                    let delta = String(response.text.dropFirst(seen.count))
-                    FileHandle.standardOutput.write(Data(delta.utf8))
-                    seen = response.text
-                }
-                if let run = try? client.get("/v1/runs/\(runId)", as: Run.self),
-                   run.status.isTerminal { break }
-                Thread.sleep(forTimeInterval: 0.8)
+        guard var run = try? client.get("/v1/runs/\(runId)", as: Run.self) else {
+            Out.die("no such run")
+        }
+
+        guard follow else {
+            let text = (try? client.get("/v1/runs/\(run.id)/log?lines=\(lines)",
+                                        as: API.TextResponse.self))?.text ?? ""
+            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                print(Ansi.dim("  \(run.agent) hasn't printed anything yet"))
             } else {
-                print(response.text)
-                break
+                print(text)
             }
-        } while follow
+            return
+        }
+
+        logHeader(run)
+        var seen = ""
+        while true {
+            guard let response = try? client.get("/v1/runs/\(run.id)/log?lines=4000",
+                                                 as: API.TextResponse.self) else {
+                Out.die("the daemon went away")
+            }
+            if response.text.count > seen.count {
+                FileHandle.standardOutput.write(Data(response.text.dropFirst(seen.count).utf8))
+                seen = response.text
+            }
+            if let fresh = try? client.get("/v1/runs/\(run.id)", as: Run.self) { run = fresh }
+            guard run.status.isActive else { break }
+            Thread.sleep(forTimeInterval: 0.8)
+        }
+        logFooter(run, spoke: !seen.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
+    private static func logHeader(_ run: Run) {
+        var line = "\(run.agent) · \(run.projectName)"
+        if let branch = run.branch { line += " · \(branch)" }
+
+        let standing: String
+        switch run.status {
+        case .queued: standing = "queued — it starts when a slot frees up"
+        case .running, .verifying, .finishing: standing = "watching \(run.agent) · ctrl-c to stop"
+        default: standing = "this one is over — here is what it said"
+        }
+
+        print("")
+        print("  \(Fmt.glyph(run.status)) \(Ansi.bold(Fmt.truncate(run.title, 68)))")
+        print("  " + Ansi.dim(line))
+        print("")
+        print("  " + Ansi.dim(standing))
+        print("")
+        fflush(stdout)
+    }
+
+    private static func logFooter(_ run: Run, spoke: Bool) {
+        print("")
+        if !spoke { print("  " + Ansi.dim("\(run.agent) printed nothing at all")) }
+        print("  \(Fmt.glyph(run.status)) \(Fmt.status(run.status))"
+              + Ansi.dim(" · \(Fmt.duration(run.duration))"))
+        if let note = run.note { print("  " + Ansi.dim(Fmt.truncate(note, 88))) }
+        print("")
     }
 
     static func diff(_ args: Args) {

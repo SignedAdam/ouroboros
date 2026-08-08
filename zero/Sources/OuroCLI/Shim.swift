@@ -39,12 +39,18 @@ enum Shim {
 
         let drained = DispatchSemaphore(value: 0)
         DispatchQueue.global().async {
+            var stream = AgentStream()
+            func emit(_ data: Data) {
+                guard !data.isEmpty else { return }
+                FileHandle.standardOutput.write(data)
+                logHandle?.write(data)
+            }
             while true {
                 let chunk = pipe.fileHandleForReading.availableData
                 if chunk.isEmpty { break }
-                FileHandle.standardOutput.write(chunk)
-                logHandle?.write(chunk)
+                emit(stream.feed(chunk))
             }
+            emit(stream.finish())
             drained.signal()
         }
         process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
