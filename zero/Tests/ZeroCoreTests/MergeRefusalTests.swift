@@ -88,4 +88,43 @@ final class MergeRefusalTests: XCTestCase {
         XCTAssertNil(run)
         XCTAssertEqual(refused, "no such run")
     }
+
+    func testARepoWithNoRemoteRefusesThePullRequest() throws {
+        let (supervisor, id) = try supervisorWithReviewableRun()
+
+        let (run, url, refused) = supervisor.openPullRequest(id)
+        XCTAssertNotNil(run)
+        XCTAssertNil(url)
+        let reason = try XCTUnwrap(refused, "a refused pull request must carry its reason")
+        XCTAssertTrue(reason.contains("no remote"), reason)
+        XCTAssertEqual(run?.status, .succeeded, "the run stays reviewable so it can be retried")
+    }
+
+    func testAMergedRunHasNothingLeftToOpenAPullRequestFor() throws {
+        let (supervisor, id) = try supervisorWithReviewableRun()
+        _ = supervisor.mergeNow(id)
+
+        let (_, url, refused) = supervisor.openPullRequest(id)
+        XCTAssertNil(url)
+        let reason = try XCTUnwrap(refused)
+        XCTAssertTrue(reason.contains("already merged"), reason)
+    }
+
+    func testAnOpenPullRequestIsHandedBackRatherThanOpenedTwice() throws {
+        let (supervisor, id) = try supervisorWithReviewableRun()
+        let link = "https://github.com/example/repo/pull/7"
+        supervisor.runs.mutate(id) { $0.result = AgentResult(outcome: "done", prUrl: link) }
+
+        let (_, url, refused) = supervisor.openPullRequest(id)
+        XCTAssertNil(refused)
+        XCTAssertEqual(url, link)
+    }
+
+    func testAnUnknownRunHasNoPullRequest() throws {
+        let (supervisor, _) = try supervisorWithReviewableRun()
+        let (run, url, refused) = supervisor.openPullRequest("r-does-not-exist")
+        XCTAssertNil(run)
+        XCTAssertNil(url)
+        XCTAssertEqual(refused, "no such run")
+    }
 }

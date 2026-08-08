@@ -54,6 +54,7 @@ final class SlashRunner: ObservableObject {
 
         case "reply":    await replyToRun(args)
         case "merge":    await mergeRun(rest)
+        case "pr":       await pullRequest(rest)
         case "retry":    await retryRun(rest)
         case "undo":     await undoRun(rest)
         case "stop":     await stopRun(rest)
@@ -300,6 +301,18 @@ final class SlashRunner: ObservableObject {
         let reply = await Wire.post("/v1/runs/\(id)/merge", as: Run.self)
         guard let run = reply.value else { report(reply.text); return }
         report("merged · \(run.title)")
+        model.refresh()
+    }
+
+    private func pullRequest(_ rawId: String) async {
+        guard let id = await resolveRun(rawId, kind: .review) else {
+            report("nothing is verified and waiting for a pull request")
+            return
+        }
+        let reply = await Wire.post("/v1/runs/\(id)/pr", as: API.PullRequest.self)
+        guard let pr = reply.value else { report(reply.text); return }
+        if let url = pr.url, let link = URL(string: url) { NSWorkspace.shared.open(link) }
+        report(pr.url ?? "pull request opened")
         model.refresh()
     }
 

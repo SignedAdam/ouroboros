@@ -46,6 +46,8 @@ public enum SlashCommands {
                      summary: "answer an agent's question"),
         SlashCommand(name: "merge", aliases: ["land"], argHint: "[run]",
                      summary: "land a verified run"),
+        SlashCommand(name: "pr", aliases: ["pull-request"], argHint: "[run]",
+                     summary: "push a verified run and open a pull request"),
         SlashCommand(name: "retry", aliases: [], argHint: "[run]",
                      summary: "dispatch it again"),
         SlashCommand(name: "undo", aliases: ["revert"], argHint: "[run]",

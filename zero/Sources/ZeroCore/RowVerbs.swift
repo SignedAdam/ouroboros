@@ -4,7 +4,7 @@ public enum RowVerb: String, CaseIterable, Sendable {
     case captureInto, favourite, hide, defaultAgent, autonomy
     case copyPath, copyTitle, copyCommand
     case delete, forget
-    case merge, rebase, undoMerge, stop, clear, markDone
+    case merge, pr, rebase, undoMerge, stop, clear, markDone
 
     case diff
 
@@ -24,7 +24,7 @@ public enum RowVerb: String, CaseIterable, Sendable {
         case .captureInto, .favourite, .hide, .defaultAgent, .autonomy,
              .copyPath, .copyTitle, .copyCommand,
              .delete, .forget,
-             .merge, .rebase, .undoMerge, .stop, .clear, .markDone,
+             .merge, .pr, .rebase, .undoMerge, .stop, .clear, .markDone,
              .diff, .reply, .discard:
             return false
         case .openFile, .openFinder, .openTerminal, .openAgentView, .openWorktree,
@@ -50,6 +50,7 @@ public enum RowVerb: String, CaseIterable, Sendable {
         case .reply:         return "reply"
         case .diff:          return "diff"
         case .merge:         return "merge"
+        case .pr:            return "pr"
         case .rebase:        return "rebase"
         case .resolve:       return "resolve"
         case .discard:       return "discard"
@@ -84,6 +85,7 @@ public enum RowVerb: String, CaseIterable, Sendable {
         case .reply:        return "arrowshape.turn.up.left"
         case .diff:         return "plus.forwardslash.minus"
         case .merge:        return "arrow.triangle.merge"
+        case .pr:           return "arrow.triangle.pull"
         case .rebase:       return "arrow.triangle.branch"
 
         case .resolve:      return "arrow.uturn.backward.badge.clock"
@@ -115,7 +117,7 @@ public extension WorkState {
         case .queued:    return [.watch, .stop]
         case .running:   return [.watch, .stop]
         case .asking:    return [.reply, .watch]
-        case .review:    return [.diff, .merge, .markDone]
+        case .review:    return [.diff, .merge, .pr]
         case .conflicts: return [.resolve, .diff, .rebase]
 
         case .obsolete:  return [.diff, .discard]

@@ -6,7 +6,7 @@ final class RowVerbTests: XCTestCase {
         let stays: [RowVerb] = [
             .delete, .forget, .hide, .favourite, .captureInto, .defaultAgent, .autonomy,
             .copyPath, .copyTitle, .copyCommand,
-            .merge, .rebase, .undoMerge, .stop, .clear, .markDone,
+            .merge, .pr, .rebase, .undoMerge, .stop, .clear, .markDone,
 
             .diff, .reply,
 
@@ -29,10 +29,10 @@ final class RowVerbTests: XCTestCase {
     }
 
     func testEveryVerbIsClassified() {
-        XCTAssertEqual(RowVerb.allCases.count, 29)
+        XCTAssertEqual(RowVerb.allCases.count, 30)
         let handsOff = RowVerb.allCases.filter(\.handsOff)
         XCTAssertEqual(handsOff.count, 10)
-        XCTAssertEqual(RowVerb.allCases.count - handsOff.count, 19)
+        XCTAssertEqual(RowVerb.allCases.count - handsOff.count, 20)
     }
 
     func testEveryVerbHasSomethingToDraw() {
@@ -97,6 +97,14 @@ final class WorkStateVerbTests: XCTestCase {
                            "\(state.rawValue) should not offer merge")
         }
         XCTAssertTrue(WorkState.review.verbs.contains(.merge))
+    }
+
+    func testAVerifiedRowOffersAPullRequestBesideTheMerge() {
+        XCTAssertEqual(WorkState.review.verbs, [.diff, .merge, .pr])
+        for state in WorkState.allCases where state != .review {
+            XCTAssertFalse(state.verbs.contains(.pr),
+                           "\(state.rawValue) has nothing verified to open a PR for")
+        }
     }
 
     func testLiveWorkIsWatchedAndStopped() {

@@ -103,6 +103,9 @@ enum RowActions {
             }
         }
         if pip.state.hasDiff, pip.runId != nil, !verbs.contains(.diff) { verbs.append(.diff) }
+        if pip.state == .review, pip.path != nil, !verbs.contains(.markDone) {
+            verbs.append(.markDone)
+        }
         return verbs
     }
 
@@ -115,6 +118,7 @@ enum RowActions {
         case .reply:     return "Reply"
         case .diff:      return "Diff"
         case .merge:     return "Merge"
+        case .pr:        return "Open a pull request"
         case .resolve:   return "Send \(pip.agent) back to it"
         case .rebase:    return "Rebase onto its base"
         case .discard:   return "Discard the branch"
@@ -143,6 +147,7 @@ enum RowActions {
                     model.runAction("merge", runId: runId)
                     model.note("merging \(pip.title)…")
                 }
+            case .pr:        if let runId = pip.runId { model.openPullRequest(runId) }
             case .undoMerge:
                 if let runId = pip.runId {
                     model.runAction("undo", runId: runId)
@@ -383,6 +388,7 @@ struct IssueRow: View {
         case .reply:     return "answer \(pip.agent)"
         case .diff:      return "what it changed"
         case .merge:     return "land it"
+        case .pr:        return "push it and open a pull request on GitHub"
         case .resolve:   return "send \(pip.agent) back to sort it out"
         case .rebase:    return "put it back on top of its base"
         case .discard:   return "its work is already on the base"
@@ -405,10 +411,14 @@ private struct VerbButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 3) {
-                Image(systemName: verb.symbol)
-                    .font(.system(size: 8.5, weight: .semibold))
+                glyph
                 Text(verb.label)
                     .font(.system(size: 9, weight: .semibold))
+                if verb == .pr {
+                    Image(systemName: "arrow.up.forward")
+                        .font(.system(size: 6.5, weight: .bold))
+                        .opacity(hovering ? 0.85 : 0.5)
+                }
             }
             .foregroundStyle(tint)
 
@@ -425,10 +435,21 @@ private struct VerbButton: View {
         .help(hint)
     }
 
+    @ViewBuilder
+    private var glyph: some View {
+        if verb == .pr {
+            GitHubMark().frame(width: 9.5, height: 9.5)
+        } else {
+            Image(systemName: verb.symbol)
+                .font(.system(size: 8.5, weight: .semibold))
+        }
+    }
+
     private var tint: Color {
         switch verb {
         case .fix, .retry, .reply, .resolve: return ouroOrange
         case .merge:               return WorkState.merged.tint
+        case .pr:                  return Color.primary.opacity(hovering ? 0.85 : 0.55)
         case .rebase:              return WorkState.conflicts.tint
         case .stop:                return WorkState.failed.tint
         default:                   return hovering ? Color.primary.opacity(0.75) : .secondary

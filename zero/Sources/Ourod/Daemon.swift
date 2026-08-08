@@ -493,6 +493,11 @@ final class Daemon: @unchecked Sendable {
                 guard let merged else { return .error(refused ?? "could not merge") }
                 if let refused { return .error(refused, status: 409) }
                 return .json(merged)
+            case "pr":
+                let (updated, url, refused) = supervisor.openPullRequest(run.id)
+                guard let updated else { return .error(refused ?? "could not open a pull request") }
+                if let refused { return .error(refused, status: 409) }
+                return .json(API.PullRequest(runId: updated.id, url: url))
             case "undo":
                 let (updated, message) = supervisor.undo(run.id)
                 guard let updated else { return .error(message) }

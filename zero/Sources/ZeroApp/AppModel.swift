@@ -297,6 +297,33 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func openPullRequest(_ runId: String) {
+        note("opening a pull request…")
+        busy = true
+        Task.detached { [client] in
+            let outcome: (url: String?, refused: String?)
+            do {
+                let pr = try client.post("/v1/runs/\(runId)/pr", as: API.PullRequest.self)
+                outcome = (pr.url, nil)
+            } catch {
+                outcome = (nil, AppModel.refusal(error))
+            }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.busy = false
+                if let refused = outcome.refused {
+                    self.note(refused, bad: true)
+                } else {
+                    if let url = outcome.url, let link = URL(string: url) {
+                        NSWorkspace.shared.open(link)
+                    }
+                    self.note(outcome.url ?? "pull request opened")
+                }
+                self.refresh()
+            }
+        }
+    }
+
     nonisolated static func refusal(_ error: Error) -> String {
         guard let client = error as? ZeroClient.ClientError else { return "\(error)" }
         switch client {

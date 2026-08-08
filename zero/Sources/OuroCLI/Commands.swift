@@ -364,6 +364,11 @@ enum Commands {
                 let run: Run = try client.post("/v1/runs/\(runId)/merge", as: Run.self)
                 if let into = run.mergedInto { Out.ok("merged into \(into)") }
                 else { Out.err(run.note ?? "not merged") }
+            case "pr":
+                let pr: API.PullRequest = try client.post("/v1/runs/\(runId)/pr",
+                                                          as: API.PullRequest.self)
+                Out.ok("pull request opened")
+                if let url = pr.url { print("    " + url) }
             case "undo":
                 let message: API.Message = try client.post("/v1/runs/\(runId)/undo", as: API.Message.self)
                 message.ok ? Out.ok(message.message) : Out.err(message.message)
@@ -420,6 +425,7 @@ enum Commands {
                 case "log":    return "ouro log \(id)"
                 case "diff":   return "ouro diff \(id)"
                 case "merge":  return "ouro merge \(id)"
+                case "pr":     return "ouro pr \(id)"
                 case "rebase": return "ouro rebase \(id)"
                 case "resolve": return "ouro resolve \(id)"
                 case "discard": return "ouro discard \(id)"

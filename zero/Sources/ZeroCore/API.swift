@@ -47,6 +47,14 @@ public enum API {
         }
     }
 
+    public struct PullRequest: Codable, Sendable {
+        public var runId: String
+        public var url: String?
+        public init(runId: String, url: String?) {
+            self.runId = runId; self.url = url
+        }
+    }
+
     public struct AgentList: Codable, Sendable {
         public var agents: [AgentInfo]
         public var defaultAgent: String

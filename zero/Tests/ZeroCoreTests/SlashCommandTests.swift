@@ -37,7 +37,7 @@ final class SlashSuggestionTests: XCTestCase {
     }
 
     func testExactMatchesComeFirst() {
-        XCTAssertEqual(names("/p"), ["project", "promote", "runs"])
+        XCTAssertEqual(names("/p"), ["project", "promote", "pr", "runs"])
     }
 
     func testMatchingIsCaseInsensitive() {

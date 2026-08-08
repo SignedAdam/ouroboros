@@ -143,10 +143,22 @@ struct PanelView: View {
     private func actions(for item: InboxItem) -> some View {
         HStack(spacing: 10) {
             ForEach(item.actions, id: \.self) { action in
-                Button(actionLabel(action)) { perform(action, item) }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(action == "reply" || action == "merge" ? ouroOrange : Color.secondary)
+                Button { perform(action, item) } label: {
+                    if action == "pr" {
+                        HStack(spacing: 3) {
+                            GitHubMark().frame(width: 9, height: 9)
+                            Text(actionLabel(action))
+                            Image(systemName: "arrow.up.forward")
+                                .font(.system(size: 7, weight: .bold))
+                                .opacity(0.6)
+                        }
+                    } else {
+                        Text(actionLabel(action))
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(action == "reply" || action == "merge" ? ouroOrange : Color.secondary)
             }
             Spacer()
         }
@@ -157,6 +169,7 @@ struct PanelView: View {
         switch action {
         case "reply":   return "Answer"
         case "merge":   return "Merge"
+        case "pr":      return "Pull request"
         case "undo":    return "Undo"
         case "retry":   return "Retry"
         case "diff":    return "Diff"
@@ -178,6 +191,10 @@ struct PanelView: View {
             return
         }
         guard let runId = item.runId else { return }
+        if action == "pr" {
+            model.openPullRequest(runId)
+            return
+        }
         if action == "diff" || action == "log" {
             copyToPasteboard("ouro \(action) \(runId)")
             model.status = "copied: ouro \(action) \(runId)"

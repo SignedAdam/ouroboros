@@ -199,7 +199,7 @@ public enum Inbox {
                         title: run.title,
                         detail: run.note ?? "Verified on \(run.branch ?? "its branch") — waiting for you to merge.",
                         createdAt: run.endedAt ?? run.queuedAt, runId: run.id,
-                        actions: ["merge", "diff", "drop"]))
+                        actions: ["merge", "pr", "diff", "drop"]))
                 }
 
             default:

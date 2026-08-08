@@ -84,6 +84,7 @@ POST   /v1/issues/{id}/fix        {agent?, worktree?, finish?}          → Run
 POST   /v1/runs                   {prompt, project, title?}            → freeform run
 POST   /v1/runs/{id}/reply        {answer, agent?}                     → new Run
 POST   /v1/runs/{id}/stop|merge|undo|retry|ack
+POST   /v1/runs/{id}/pr                                                → {runId, url}
 POST   /v1/ideas                  {body, title?, project?, source?}
 POST   /v1/ideas/{id}/promote     {project?, fix?}
 POST   /v1/proposals              {title, body, source, project?, dedupeKey?, confidence?}
