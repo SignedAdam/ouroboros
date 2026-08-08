@@ -127,6 +127,7 @@ final class Daemon: @unchecked Sendable {
         case ("GET", "events"):    return eventStream()
         case ("GET", "config"):    return .json(config)
         case ("GET", "logs"):      return logs(request)
+        case (_, "preferences"):   return routePreferences(method, request)
         case ("GET", "agents"):
             return .json(API.AgentList(agents: agentList(), defaultAgent: config.defaultAgent))
         case ("POST", "setup"):    return setup(request)
@@ -141,6 +142,30 @@ final class Daemon: @unchecked Sendable {
         case (_, "ideas"):     return routeIdeas(method, path, request)
         case (_, "proposals"): return routeProposals(method, path, request)
         case ("GET", "inbox"): return .json(API.InboxList(items: inbox()))
+
+        default:
+            return .error("no route for \(method) \(request.path)", status: 404)
+        }
+    }
+
+    private func routePreferences(_ method: String, _ request: HTTPRequest) -> HTTPResponse {
+        let preferences = supervisor.preferences
+        switch method {
+        case "GET":
+            return .json(API.Preferences(text: preferences.text(), path: preferences.file))
+
+        case "PUT", "PATCH", "POST":
+            guard let body = request.decode(API.SetPreferences.self),
+                  body.text != nil || body.append != nil else {
+                return .error("expected {\"text\": \"…\"} or {\"append\": \"…\"}")
+            }
+            let wrote = body.text.map { preferences.write($0) }
+                ?? preferences.append(body.append ?? "")
+            guard wrote else {
+                return .error("could not write \(preferences.file)", status: 500)
+            }
+            events.publish(ZeroEvent(type: "preferences.changed", message: preferences.file))
+            return .json(API.Preferences(text: preferences.text(), path: preferences.file))
 
         default:
             return .error("no route for \(method) \(request.path)", status: 404)

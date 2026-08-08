@@ -286,6 +286,21 @@ public enum API {
         }
     }
 
+    public struct Preferences: Codable, Sendable {
+        public var text: String
+        public var path: String
+        public init(text: String, path: String) { self.text = text; self.path = path }
+    }
+
+    public struct SetPreferences: Codable, Sendable {
+        public var text: String?
+
+        public var append: String?
+        public init(text: String? = nil, append: String? = nil) {
+            self.text = text; self.append = append
+        }
+    }
+
     public struct Message: Codable, Sendable {
         public var ok: Bool
         public var message: String

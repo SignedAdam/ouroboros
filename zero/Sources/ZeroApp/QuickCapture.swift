@@ -312,6 +312,10 @@ struct QuickCaptureView: View {
             if chrome.slashSelection != 0 { chrome.slashSelection = 0 }
         }
         .onChange(of: slash.wizard?.id) { _, id in chrome.modalOpen = id != nil }
+        .onChange(of: slash.preferences?.id) { _, id in
+            chrome.modalOpen = id != nil
+            if id == nil { chrome.focusToken &+= 1 }
+        }
 
         .onChange(of: model.showingDiff == nil) { _, gone in
             chrome.modalOpen = !gone
@@ -322,6 +326,9 @@ struct QuickCaptureView: View {
         }
         .sheet(item: $slash.wizard) { request in
             ProjectWizardSheet(request: request, model: model, onClose: { slash.wizard = nil })
+        }
+        .sheet(item: $slash.preferences) { request in
+            PreferencesSheet(request: request, model: model, onClose: { slash.preferences = nil })
         }
     }
 
@@ -514,7 +521,7 @@ struct QuickCaptureView: View {
                 guard handled else { return }
                 model.draft = ""
 
-                if slash.wizard == nil { closeAfterFlash() }
+                if slash.wizard == nil && slash.preferences == nil { closeAfterFlash() }
             }
             return
         }

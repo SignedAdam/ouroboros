@@ -122,6 +122,7 @@ ouro rename <project> <new-name>       call it something else
 ouro new <name> --desc "…" --github private --roadmap ai
 ouro daemon status|start|stop|restart|log
 ouro update                            pull, rebuild, restart
+ouro prefs [add|set|edit|clear] "…"    standing orders every agent is told
 ```
 
 `ouro i` infers the project from your cwd — walking up to the git root — and registers
@@ -179,6 +180,7 @@ Typing `/` turns the field into a command line: ⇥ completes, ↑↓ pick, ⏎ 
 | `/setup` | `[roots]` | find and adopt your projects |
 | `/update` | | pull and rebuild ouroboros itself |
 | `/hotkey` | `<combo>` | the global capture shortcut |
+| `/prefs` | `[line]` | standing orders every agent is told |
 | `/health` | | daemon, projects, runs, inbox |
 | `/help` | | every command |
 | `/quit` | | quit Ouroboros Zero |
@@ -197,6 +199,26 @@ a bug report, not a typo.
 `repoPath` in config.json (the registered project called `ouroboros` when that is unset),
 then `make install` there, then restarts the daemon if the commit moved. A dirty tree or
 a diverged branch stops it before anything is built.
+
+## Your preferences
+
+`~/.ouroboros/preferences.md` is a plain list of how you want work done — one line a
+piece, your words. Ouroboros reads it at dispatch and puts it in the brief of every
+agent it starts, above the rules it must follow and below the issue it was given. The
+issue wins where the two disagree, and the file is read fresh each time, so an edit
+lands on the next run without a restart.
+
+```bash
+ouro prefs                                  read them back
+ouro prefs add "write tests for every fix"  one more line
+ouro prefs "never touch the changelog"      same thing, shorter
+ouro prefs set "…"    ·  ouro prefs edit    replace the lot · open $EDITOR
+ouro prefs clear                            back to the plain brief
+```
+
+`/prefs` in the capture panel opens the same file in a sheet; `/prefs <line>` appends
+one without opening anything. An operator reads and writes them over the API —
+`GET /v1/preferences`, `PUT /v1/preferences` with `{"text": …}` or `{"append": …}`.
 
 ## Autonomy
 

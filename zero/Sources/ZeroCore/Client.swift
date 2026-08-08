@@ -160,6 +160,11 @@ public final class ZeroClient: @unchecked Sendable {
         try call("PATCH", path, bodyData: Zero.compactEncoder.encodeSafe(body), as: type)
     }
 
+    public func put<B: Encodable, R: Decodable>(_ path: String, _ body: B,
+                                                as type: R.Type = R.self) throws -> R {
+        try call("PUT", path, bodyData: Zero.compactEncoder.encodeSafe(body), as: type)
+    }
+
     public func delete<R: Decodable>(_ path: String, as type: R.Type = R.self) throws -> R {
         try call("DELETE", path, as: type)
     }

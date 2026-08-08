@@ -17,6 +17,7 @@ public enum Paths {
         return "/tmp/ouroboros-\(hex).sock"
     }
     public static var configFile: String { sub("config.json") }
+    public static var preferencesFile: String { sub("preferences.md") }
     public static var registryFile: String { sub("projects.json") }
     public static var runsDir: String { sub("runs") }
     public static var ideasDir: String { sub("ideas") }
