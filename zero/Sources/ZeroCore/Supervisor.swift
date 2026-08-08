@@ -456,27 +456,30 @@ public final class Supervisor: @unchecked Sendable {
         succeed(run.id, note: "Merged into \(run.base).")
     }
 
-    private func openPR(_ run: Run, project: Project) {
-        guard let branch = run.branch else {
-            succeed(run.id, note: "No branch to push."); return
-        }
+    private enum PRAttempt {
+        case opened(String?)
+
+        case nothingToOpen(String)
+
+        case broke(String)
+    }
+
+    private func attemptPR(_ run: Run, project: Project) -> PRAttempt {
+        guard let branch = run.branch else { return .nothingToOpen("there is no branch to push") }
         let git = Git(project.path)
         guard git.hasRemote else {
-            succeed(run.id, note: "Verified, but this repo has no remote — nothing to open a PR against.")
-            return
+            return .nothingToOpen("this repo has no remote — nothing to open a PR against")
         }
         let push = git.run(["push", "-u", "origin", branch], timeout: 180)
         guard push.ok else {
-            fail(run.id, note: "git push failed:\n\(push.output.suffix(600))")
-            return
+            return .broke("git push failed:\n\(push.output.suffix(600))")
         }
         let summary = run.result?.summary ?? "Filed with Ouroboros."
         let create = Shell.run(["gh", "pr", "create", "--base", run.base, "--head", branch,
                                 "--title", run.title, "--body", summary],
                                cwd: project.path, login: true, timeout: 120)
         guard create.ok else {
-            fail(run.id, note: "gh pr create failed:\n\(create.output.suffix(600))")
-            return
+            return .broke("gh pr create failed:\n\(create.output.suffix(600))")
         }
         let url = create.output.split(separator: "\n")
             .last(where: { $0.hasPrefix("http") }).map(String.init)
@@ -485,7 +488,18 @@ public final class Supervisor: @unchecked Sendable {
             result.prUrl = url
             $0.result = result
         }
-        succeed(run.id, note: url.map { "PR opened: \($0)" } ?? "PR opened.")
+        return .opened(url)
+    }
+
+    private func openPR(_ run: Run, project: Project) {
+        switch attemptPR(run, project: project) {
+        case .opened(let url):
+            succeed(run.id, note: url.map { "PR opened: \($0)" } ?? "PR opened.")
+        case .nothingToOpen(let why):
+            succeed(run.id, note: "Verified, but \(why).")
+        case .broke(let why):
+            fail(run.id, note: why)
+        }
     }
 
     private func resolveIssue(_ run: Run, project: Project, merged: String?) {
@@ -543,6 +557,30 @@ public final class Supervisor: @unchecked Sendable {
             return (after, after.note ?? "the merge did not happen")
         }
         return (after, nil)
+    }
+
+    @discardableResult
+    public func openPullRequest(_ id: String) -> (run: Run?, url: String?, refused: String?) {
+        guard let run = runs.get(id), let project = registry.find(run.projectId) else {
+            return (nil, nil, "no such run")
+        }
+        if let open = run.result?.prUrl { return (run, open, nil) }
+        guard run.status == .succeeded else {
+            return (run, nil, "this run is \(run.status.rawValue), and only a verified run "
+                             + "can open a pull request")
+        }
+        if let already = run.mergedInto {
+            return (run, nil, "already merged into \(already) — there is nothing left to review")
+        }
+
+        switch attemptPR(run, project: project) {
+        case .opened(let url):
+            runs.mutate(id) { $0.acknowledged = false }
+            succeed(id, note: url.map { "PR opened: \($0)" } ?? "PR opened.")
+            return (runs.get(id), url, nil)
+        case .nothingToOpen(let why), .broke(let why):
+            return (runs.get(id), nil, why)
+        }
     }
 
     @discardableResult

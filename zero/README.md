@@ -63,7 +63,7 @@ Five kinds of item, and nothing else — decisions only, never status:
 |---|---|
 | `needs you` | an agent stopped and asked a question → `ouro reply <run> "…"` |
 | `failed` | the run or the gate went red → `ouro log` / `ouro retry` |
-| `review` | verified, still merges, waiting for you → `ouro merge <run>` |
+| `review` | verified, still merges, waiting for you → `ouro merge <run>` / `ouro pr <run>` |
 | `merged` | merged or PR open → `ouro diff` / `ouro undo` |
 | `proposal` | an AI operator suggested work → `ouro accept` / `ouro dismiss` |
 
@@ -109,6 +109,7 @@ ouro runs -w                           live table of every agent
 ouro log <run> -f  ·  ouro diff <run> [--json]
 ouro reply <run> "…" [-a codex]        answer a question, optionally switch harness
 ouro merge <run>  ·  ouro undo <run>  ·  ouro stop <run>  ·  ouro retry <run>
+ouro pr <run>                          push its branch and open a pull request
 ouro resolve <run>                     send its agent back to fix the conflicts
 ouro rebase <run>                      put its branch back on top of its base
 ouro discard <run>                     let a spent branch go
@@ -164,6 +165,7 @@ Typing `/` turns the field into a command line: ⇥ completes, ↑↓ pick, ⏎ 
 | `/runs` | | what's in flight |
 | `/reply` | `[run] <answer>` | answer an agent's question |
 | `/merge` | `[run]` | land a verified run |
+| `/pr` | `[run]` | push a verified run and open a pull request |
 | `/retry` | `[run]` | dispatch it again |
 | `/undo` | `[run]` | revert a merged run |
 | `/stop` | `[run]` | abandon a run mid-flight |
@@ -184,7 +186,7 @@ Typing `/` turns the field into a command line: ⇥ completes, ↑↓ pick, ⏎ 
 Aliases resolve too — `/p`, `/ps`, `/land`, `/note`, `/?` and a few more; type `/` to see
 them. `/add` and `/new` with no argument open a sheet instead. `/verify`, `/autonomy`,
 `/agent` and `/finish` apply to the project in the footer picker and print its current
-value when given no argument. `/reply`, `/merge`, `/retry` and `/undo` with no run id act
+value when given no argument. `/reply`, `/merge`, `/pr`, `/retry` and `/undo` with no run id act
 on the newest inbox item of that kind — `/merge` alone merges the one that is waiting —
 and `/stop` alone takes the run in flight.
 
