@@ -2,7 +2,7 @@
 
 The global control plane. Ouroboros (the package next door) puts a report-issue button
 *inside one app*. Zero puts it **everywhere**, supervises the agents it dispatches, and
-refuses to let unverified work land.
+runs your verify command on the branch before anything merges.
 
 ```
 ◍ filed  receipts · the receipt total is wrong
@@ -52,8 +52,9 @@ ouro i "…" --fix
       red   → keep the branch, put it in your inbox with the reason
 ```
 
-**The agent never lands its own work.** That single rule is what buys you the
-verification gate, a reviewable branch for every fix, and one-command undo.
+**The agent never lands its own work.** That single rule is what buys you a
+reviewable branch for every fix and one-command undo. What "verified" means is
+whatever you set as the project's verify command, and nothing more.
 
 ## The inbox
 
@@ -175,6 +176,7 @@ Typing `/` turns the field into a command line: ⇥ completes, ↑↓ pick, ⏎ 
 | `/autonomy` | `<manual\|assist\|auto>` | how far agents may go alone |
 | `/agent` | `<name>` | which harness this project uses |
 | `/finish` | `<merge\|pr\|leave>` | what happens when a fix passes |
+| `/gui` | `<on\|off>` | may an agent drive this app on screen to check its work |
 | `/discover` | `<root>` | register every repo under a root |
 | `/forget` | `<project>` | unregister it — the files stay |
 | `/setup` | `[roots]` | find and adopt your projects |
@@ -219,6 +221,24 @@ ouro prefs clear                            back to the plain brief
 `/prefs` in the capture panel opens the same file in a sheet; `/prefs <line>` appends
 one without opening anything. An operator reads and writes them over the API —
 `GET /v1/preferences`, `PUT /v1/preferences` with `{"text": …}` or `{"append": …}`.
+
+## Checking work on screen
+
+Some fixes cannot be proved by a diff. "The login button does nothing" passes the
+build either way, so for a project with a screen an agent is given a small toolbelt
+on `PATH` (`list-windows`, `take-screenshot`, `press-key`, `type-text`, `open-app`,
+`focus-app`, `quit-app`, `record-screen`) and told to open the app and look before
+calling the fix done.
+
+This is **off by default and per project**, because it is macOS GUI automation and
+most projects have nothing to drive:
+
+```bash
+ouro projects set <id> --gui        # or /gui on in the panel
+```
+
+Leave it off and the verify command is the only judge, which is the right answer for
+a service, a library, or anything headless. Full tool spec: [`tools/TOOLS.md`](tools/TOOLS.md).
 
 ## Autonomy
 
@@ -287,7 +307,7 @@ truth; everything else is a cache.
 ## Development
 
 ```bash
-swift test        # 259 tests
+swift test        # the suite
 make build        # release binaries
 make app          # the .app bundle
 ```

@@ -1,8 +1,14 @@
 # Toolbelt
 
-Small executables installed to `~/.ouroboros/tools/`, on `PATH` for every agent
-Ouroboros dispatches. This file is the whole spec. You should not need to read the
-source or guess at a flag.
+Small executables installed to `~/.ouroboros/tools/`, for agents working on a project
+that has a screen. They exist so an agent can check a UI fix by looking at it instead
+of trusting the diff.
+
+They are **opt in per project** (`ouro projects set <id> --gui`, or `/gui on`), because
+this is macOS GUI automation and most projects have nothing to drive. A project without
+it never hears about them and is judged by its verify command.
+
+This file is the whole spec. You should not need to read the source or guess at a flag.
 
 Every name is a verb and a noun, spelled out. If you can read the name you know what
 it does.
