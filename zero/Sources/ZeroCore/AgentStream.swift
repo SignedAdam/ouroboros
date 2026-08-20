@@ -1,16 +1,11 @@
 import Foundation
 
-/// Turns a harness's newline-delimited JSON events into lines a person can read
-/// while the agent is still working. A line that is not a recognised event goes
-/// through untouched, so a harness that prints plain text still reads the same.
 public struct AgentStream {
     private var pending: [UInt8] = []
     private var lastSpoken = ""
 
     public init() {}
 
-    /// A harness that draws a progress bar never sends a newline, so hold back only
-    /// so much before letting it through as it came.
     static let holdLimit = 8192
 
     public mutating func feed(_ chunk: Data) -> Data {
@@ -36,7 +31,6 @@ public struct AgentStream {
         return Data((text + "\n").utf8)
     }
 
-    /// The readable form of one line, or nil when the line carries nothing worth showing.
     public mutating func readable(_ line: String) -> String? {
         let text = line.hasSuffix("\r") ? String(line.dropLast()) : line
         guard let event = AgentStream.decode(text) else { return text }

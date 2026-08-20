@@ -26,15 +26,19 @@ public enum API {
         public var favourite: Bool?
 
         public var hidden: Bool?
+
+        public var gui: Bool?
         public init(name: String? = nil, baseBranch: String? = nil, verifyCmd: String? = nil,
                     defaultAgent: String? = nil, autonomy: String? = nil, maxParallel: Int? = nil,
                     worktreeDefault: Bool? = nil, finishDefault: String? = nil,
-                    protectedPaths: [String]? = nil, favourite: Bool? = nil, hidden: Bool? = nil) {
+                    protectedPaths: [String]? = nil, favourite: Bool? = nil, hidden: Bool? = nil,
+                    gui: Bool? = nil) {
             self.name = name; self.baseBranch = baseBranch; self.verifyCmd = verifyCmd
             self.defaultAgent = defaultAgent; self.autonomy = autonomy; self.maxParallel = maxParallel
             self.worktreeDefault = worktreeDefault; self.finishDefault = finishDefault
             self.protectedPaths = protectedPaths
             self.favourite = favourite; self.hidden = hidden
+            self.gui = gui
         }
     }
 

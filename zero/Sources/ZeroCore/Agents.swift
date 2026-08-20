@@ -41,8 +41,6 @@ public enum Agents {
         }
     }
 
-    /// Without this a printing claude says nothing at all until it is finished, so
-    /// there is nothing to watch while it works.
     static func streaming(_ argv: [String], harness: Harness) -> [String] {
         guard harness == .claude, argv.count > 1 else { return argv }
         guard argv.contains("-p") || argv.contains("--print") else { return argv }

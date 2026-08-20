@@ -72,6 +72,7 @@ final class SlashRunner: ObservableObject {
         case "autonomy": await setAutonomy(rest)
         case "agent":    await setAgent(rest)
         case "finish":   await setFinish(rest)
+        case "gui":      await setGui(rest)
         case "discover": await discover(rest)
         case "forget":   await forgetProject(rest)
 
@@ -225,6 +226,26 @@ final class SlashRunner: ObservableObject {
         }
         guard let updated = await patch(project, API.PatchProject(finishDefault: raw.lowercased())) else { return }
         report("\(updated.name) finishes with \(updated.policy.finishDefault.rawValue)")
+    }
+
+    private func setGui(_ raw: String) async {
+        guard let project = requireProject() else { return }
+        let on = ["on", "true", "yes", "1"], off = ["off", "false", "no", "0"]
+        guard !raw.isEmpty else {
+            report(project.policy.gui
+                   ? "\(project.name) can be driven on screen"
+                   : "\(project.name) is checked by its verify command only")
+            return
+        }
+        let want = raw.lowercased()
+        guard on.contains(want) || off.contains(want) else {
+            report("gui is on or off")
+            return
+        }
+        guard let updated = await patch(project, API.PatchProject(gui: on.contains(want))) else { return }
+        report(updated.policy.gui
+               ? "agents may drive \(updated.name) on screen to check their work"
+               : "\(updated.name) is checked by its verify command only")
     }
 
     private func dispatchFix(_ rawId: String) async {

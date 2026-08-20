@@ -830,7 +830,7 @@ enum Commands {
 
         case "set":
             guard args.positional.count > 1 else {
-                Out.die("usage: ouro projects set <id> [--verify \"swift build\"] [--autonomy auto] [--base main] [--agent codex]")
+                Out.die("usage: ouro projects set <id> [--verify \"swift build\"] [--autonomy auto] [--base main] [--agent codex] [--gui|--no-gui]")
             }
             let patch = API.PatchProject(
                 name: args.flag("name"), baseBranch: args.flag("base"),
@@ -838,7 +838,8 @@ enum Commands {
                 autonomy: args.flag("autonomy"),
                 maxParallel: args.flag("limit").flatMap(Int.init),
                 worktreeDefault: args.has("no-worktree") ? false : nil,
-                finishDefault: args.flag("finish"))
+                finishDefault: args.flag("finish"),
+                gui: args.has("gui") ? true : (args.has("no-gui") ? false : nil))
             do {
                 let project: Project = try client.patch("/v1/projects/\(args.positional[1])", patch)
                 Out.ok("updated \(project.name)")

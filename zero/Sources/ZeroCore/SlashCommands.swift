@@ -65,6 +65,8 @@ public enum SlashCommands {
                      summary: "which harness this project uses"),
         SlashCommand(name: "finish", aliases: [], argHint: "<merge|pr|leave>",
                      summary: "what happens when a fix passes"),
+        SlashCommand(name: "gui", aliases: [], argHint: "<on|off>",
+                     summary: "can an agent drive this app on screen to check its work"),
         SlashCommand(name: "discover", aliases: ["scan"], argHint: "<root>",
                      summary: "register every repo under a root"),
         SlashCommand(name: "forget", aliases: ["rm", "remove"], argHint: "<project>",

@@ -235,6 +235,7 @@ final class Daemon: @unchecked Sendable {
                 if v { project.hidden = false }
             }
             if let v = body.hidden { project.hidden = v }
+            if let v = body.gui { project.policy.gui = v }
             registry.upsert(project)
             return .json(project)
 

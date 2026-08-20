@@ -200,7 +200,7 @@ public final class Supervisor: @unchecked Sendable {
                 resultPath: runs.resultPath(run.id),
                 protectedPaths: project.policy.protectedPaths,
                 extraContext: run.note,
-                toolsPath: installedToolsPath(),
+                toolsPath: project.policy.gui ? installedToolsPath() : nil,
                 preferences: standing))
         } else {
             prompt = SupervisedPrompt.fix(SupervisedPrompt.Context(
@@ -212,7 +212,7 @@ public final class Supervisor: @unchecked Sendable {
                 verifyCmd: project.verifyCmd,
                 resultPath: runs.resultPath(run.id),
                 protectedPaths: project.policy.protectedPaths,
-                toolsPath: installedToolsPath(),
+                toolsPath: project.policy.gui ? installedToolsPath() : nil,
                 preferences: standing))
         }
         try? FileManager.default.createDirectory(atPath: runs.dir(run.id),

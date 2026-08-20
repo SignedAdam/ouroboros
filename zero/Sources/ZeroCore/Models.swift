@@ -28,14 +28,27 @@ public struct Policy: Codable, Sendable, Equatable {
 
     public var protectedPaths: [String]
 
+    public var gui: Bool
+
     public init(autonomy: Autonomy = .manual, maxParallel: Int = 2,
                 worktreeDefault: Bool = true, finishDefault: Finish = .merge,
-                protectedPaths: [String] = []) {
+                protectedPaths: [String] = [], gui: Bool = false) {
         self.autonomy = autonomy
         self.maxParallel = maxParallel
         self.worktreeDefault = worktreeDefault
         self.finishDefault = finishDefault
         self.protectedPaths = protectedPaths
+        self.gui = gui
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        autonomy = try c.decodeIfPresent(Autonomy.self, forKey: .autonomy) ?? .manual
+        maxParallel = try c.decodeIfPresent(Int.self, forKey: .maxParallel) ?? 2
+        worktreeDefault = try c.decodeIfPresent(Bool.self, forKey: .worktreeDefault) ?? true
+        finishDefault = try c.decodeIfPresent(Finish.self, forKey: .finishDefault) ?? .merge
+        protectedPaths = try c.decodeIfPresent([String].self, forKey: .protectedPaths) ?? []
+        gui = try c.decodeIfPresent(Bool.self, forKey: .gui) ?? false
     }
 }
 
