@@ -8,6 +8,7 @@ BIN   := $(HOME)/.local/bin
 all: build
 
 build:
+	rm -rf "$(BUILD)/OuroborosZero_ZeroApp.bundle"
 	swift build -c release --product ouro
 	swift build -c release --product ourod
 	swift build -c release --product ouroboros-zero
@@ -43,6 +44,9 @@ app: build
 	cp "$(BUILD)/ouroboros-zero" "$(APP)/Contents/MacOS/ouroboros-zero"
 	cp "$(BUILD)/ourod"          "$(APP)/Contents/MacOS/ourod"
 	cp "$(BUILD)/ouro"           "$(APP)/Contents/MacOS/ouro"
+	mkdir -p "$(APP)/Contents/Resources"
+	rm -rf "$(APP)/Contents/Resources/OuroborosZero_ZeroApp.bundle"
+	cp -R "$(BUILD)/OuroborosZero_ZeroApp.bundle" "$(APP)/Contents/Resources/"
 	printf '%s\n' \
 	  '<?xml version="1.0" encoding="UTF-8"?>' \
 	  '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \

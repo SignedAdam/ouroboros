@@ -70,6 +70,7 @@ final class SlashRunner: ObservableObject {
         case "setup":    await setup(args)
         case "update":   await selfUpdate()
         case "rebuild":  await rebuildFromSource()
+        case "toast":    model.dismissCapture?(); ToastCenter.shared.preview()
         case "hotkey":   await setHotkey(rest)
         case "logs":     openLogs(rest)
         case "health":   await showHealth()

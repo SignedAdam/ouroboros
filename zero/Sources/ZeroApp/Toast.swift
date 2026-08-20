@@ -67,6 +67,14 @@ final class ToastCenter: NSObject {
         }
     }
 
+    func preview() {
+        play("landed")
+        present(ToastContent(
+            title: "the capture panel has a bright hairline along its top edge",
+            detail: "ouroboros · verified and merged into main",
+            good: true))
+    }
+
     private func present(_ content: ToastContent) {
         ticker?.cancel()
         panel?.orderOut(nil)
@@ -198,7 +206,8 @@ final class ToastCenter: NSObject {
 
     private func play(_ name: String?) {
         guard let name,
-              let url = Bundle.main.url(forResource: name, withExtension: "wav")
+              let url = Bundle.module.url(forResource: name, withExtension: "wav")
+                ?? Bundle.main.url(forResource: name, withExtension: "wav")
                 ?? ToastCenter.developmentSound(name)
         else { return }
         player = try? AVAudioPlayer(contentsOf: url)

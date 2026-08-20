@@ -77,6 +77,8 @@ public enum SlashCommands {
 
         SlashCommand(name: "rebuild", aliases: [], argHint: "from source",
                      summary: "rebuild from the code on disk and restart"),
+        SlashCommand(name: "toast", aliases: ["notification"], argHint: "",
+                     summary: "hear and see the completion notification"),
         SlashCommand(name: "logs", aliases: ["activity"], argHint: "[errors|text]",
                      summary: "everything ouroboros has done"),
         SlashCommand(name: "hotkey", aliases: [], argHint: "<combo>",

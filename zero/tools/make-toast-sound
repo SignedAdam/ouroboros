@@ -1,21 +1,15 @@
 #!/opt/homebrew/bin/python3.11
-"""Synthesises the toast sound Ouroboros plays when a run lands.
+"""Renders the sound Ouroboros plays when a run lands.
 
-The brief was Jared Leto's ringtone in Blade Runner 2049 (he plays Wallace): a
-chirpy pulse, twice, inside about a second. So it is two short chirps, not a
-chime and not a drone. Each chirp sweeps in pitch over a few tens of
-milliseconds, which is what makes it read as a chirp rather than a beep, over an
-optional low partial that gives it body on a laptop speaker.
+The starting brief was Wallace's ringtone in Blade Runner 2049. What Adam picked
+is quieter than that. Two low pulses close together, flat in pitch, with the
+second one well back from the first.
 
-Every character decision is a flag, because the difference between a good one
-and a bad one is entirely taste and the only way to choose is to hear them side
-by side. See `audition-toast-sound` for that.
+    make-toast-sound out.wav
+    make-toast-sound out.wav --base 340 --gap 0.18
 
-    make-toast-sound out.wav                       # the current chosen sound
-    make-toast-sound out.wav --gap 0.18 --sweep 0.6 --base 1200
-
-Rendered rather than recorded so it lives in the repo as a file you can retune,
-instead of a binary nobody can adjust.
+Every character decision is a flag. `audition-toast-sound` plays a spread of them
+so a candidate can be heard instead of described.
 """
 import argparse
 import math
@@ -25,15 +19,15 @@ import wave
 RATE = 48_000
 
 DEFAULTS = dict(
-    base=880.0,      # Hz of the first chirp
-    interval=1.122,  # second chirp relative to the first (a whole tone up)
-    gap=0.230,       # seconds between the two chirp onsets
-    sweep=1.5,       # end/start pitch ratio. >1 rises, <1 falls, 1.0 is flat
+    base=200.0,      # Hz of the first pulse
+    interval=1.122,  # second pulse relative to the first (a whole tone up)
+    gap=0.230,       # seconds between the two pulse onsets
+    sweep=1.0,       # end/start pitch ratio. 1.0 holds the pitch flat
     glide=0.130,     # seconds the sweep takes
     decay=26.0,      # tail rate — higher is snappier
-    body=0.30,       # gain of the low partial under each chirp, 0 for none
-    shimmer=0.22,    # second-harmonic gain — brightness
-    second=0.78,     # gain of the second chirp relative to the first
+    body=0.30,       # gain of the low partial under each pulse, 0 for none
+    shimmer=0.19,    # second-harmonic gain — brightness
+    second=0.46,     # gain of the second pulse relative to the first
 )
 
 def chirp(t, base, gain, p):

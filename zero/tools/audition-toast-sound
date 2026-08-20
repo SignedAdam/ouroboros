@@ -9,7 +9,7 @@ listening pass replaces ten of those.
     audition-toast-sound --only 4     # replay one candidate
     audition-toast-sound --loop 4     # replay one candidate three times
 
-Candidates land in Resources/reference/ so the ones worth keeping stay kept.
+Candidates land in zero/sounds/, which is scratch space and never ships.
 """
 import argparse
 import os
@@ -24,7 +24,9 @@ _src = open(os.path.join(HERE, "make-toast-sound")).read().split('if __name__')[
 mts = types.ModuleType("mts")
 exec(compile(_src, "make-toast-sound", "exec"), mts.__dict__)
 
-OUT = os.path.join(HERE, "..", "Sources", "ZeroApp", "Resources", "reference")
+EXPLORE = dict(mts.DEFAULTS, base=880.0, sweep=1.5, shimmer=0.22, second=0.78)
+
+OUT = os.path.join(HERE, "..", "sounds")
 
 CANDIDATES = [
     ("rise-tight",   "rising, chirps close together (the current one)", {}),
@@ -42,7 +44,7 @@ CANDIDATES = [
 ]
 
 def build(name, overrides):
-    values = dict(mts.DEFAULTS)
+    values = dict(EXPLORE)
     values.update(overrides)
     path = os.path.join(OUT, f"toast-{name}.wav")
     mts.write(path, mts.render(types.SimpleNamespace(**values)))
