@@ -33,11 +33,26 @@ public enum Agents {
         if !templated, harness.acceptsSessionId, !argv.contains("--session-id"), !argv.isEmpty {
             argv.insert(contentsOf: ["--session-id", sessionId], at: 1)
         }
+        argv = streaming(argv, harness: harness)
         return argv.map { token in
             token == "{prompt}"
                 ? prompt
                 : token.replacingOccurrences(of: "{session}", with: sessionId)
         }
+    }
+
+    /// Without this a printing claude says nothing at all until it is finished, so
+    /// there is nothing to watch while it works.
+    static func streaming(_ argv: [String], harness: Harness) -> [String] {
+        guard harness == .claude, argv.count > 1 else { return argv }
+        guard argv.contains("-p") || argv.contains("--print") else { return argv }
+        guard !argv.contains(where: { $0.hasPrefix("--output-format") }) else { return argv }
+
+        var extras = ["--output-format", "stream-json"]
+        if !argv.contains("--verbose") { extras.append("--verbose") }
+        var out = argv
+        out.insert(contentsOf: extras, at: 1)
+        return out
     }
 
     public static func resumeArgv(harness: Harness, template: [String]?,
@@ -54,7 +69,8 @@ public enum Agents {
                                   sessionId: String, prompt: String) -> [String]? {
         let executable = template?.first ?? harness.rawValue
         switch harness {
-        case .claude: return [executable, "--resume", sessionId, "-p", prompt]
+        case .claude:
+            return streaming([executable, "--resume", sessionId, "-p", prompt], harness: .claude)
 
         case .codex:  return [executable, "exec", "resume", sessionId, prompt]
         default:      return nil

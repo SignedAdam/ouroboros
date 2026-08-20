@@ -458,10 +458,16 @@ final class AppModel: ObservableObject {
     }
 
     func watchRun(_ runId: String) {
+        note("opening the log…")
         Task.detached {
-            Shell.run(["/Applications/Ghostty.app/Contents/MacOS/ghostty",
-                       "--title=ouro log", "-e", "zsh", "-lc",
-                       "ouro log \(Shell.quote(runId)) -f"], login: true)
+            let ghostty = Shell.which("ghostty")
+                ?? "/Applications/Ghostty.app/Contents/MacOS/ghostty"
+            let ouro = Shell.which("ouro") ?? "ouro"
+            Shell.run([ghostty, "--title=ouro log",
+                       "--window-width=110", "--window-height=34",
+                       "--wait-after-command=true",
+                       "-e", "zsh", "-lc",
+                       "\(Shell.quote(ouro)) log \(Shell.quote(runId)) -f"], login: true)
         }
     }
 
