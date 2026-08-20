@@ -61,6 +61,7 @@ func help() {
         ("  ouro daemon status|start|stop|restart|log", ""),
         ("  ouro update", "pull, rebuild, restart"),
         ("  ouro hotkey [combo]", "the global capture shortcut"),
+        ("  ouro prefs [add|set|edit|clear] \"…\"", "standing orders every agent is told"),
     ]
     for (left, right) in lines {
         if left.isEmpty && right.isEmpty { print(""); continue }
@@ -111,6 +112,7 @@ case "new":                           Commands.newProject(args)
 case "daemon", "d":                   Commands.daemon(args)
 case "update", "upgrade":             Commands.update(args)
 case "hotkey":                        Commands.hotkey(args)
+case "prefs", "preferences":          Commands.prefs(args)
 case "run-shim":                      Shim.run(args)
 case "version":                       print("ouroboros zero \(ZeroVersion.current)")
 case "help":                          help()

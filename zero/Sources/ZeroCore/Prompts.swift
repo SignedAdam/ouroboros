@@ -16,11 +16,14 @@ public enum SupervisedPrompt {
 
         public var toolsPath: String?
 
+        public var preferences: String?
+
         public init(title: String, body: String, issuePath: String? = nil, branch: String,
                     base: String, worktree: Bool, verifyCmd: String? = nil, resultPath: String,
                     protectedPaths: [String] = [], extraContext: String? = nil,
-                    toolsPath: String? = nil) {
+                    toolsPath: String? = nil, preferences: String? = nil) {
             self.toolsPath = toolsPath
+            self.preferences = preferences
             self.title = title
             self.body = body
             self.issuePath = issuePath
@@ -77,6 +80,10 @@ public enum SupervisedPrompt {
         out += ctx.worktree
             ? "\nYou are in a dedicated git worktree on branch `\(ctx.branch)`, cut from `\(ctx.base)`.\n"
             : "\nYou are working directly in the repository, on branch `\(ctx.branch)`.\n"
+
+        if let preferences = Preferences.section(ctx.preferences ?? "") {
+            out += "\n\(preferences)\n"
+        }
 
         out += """
 
@@ -162,9 +169,12 @@ public enum SupervisedPrompt {
 
         public var fresh: Bool
 
+        public var preferences: String?
+
         public init(branch: String, base: String, branchSha: String, baseSha: String,
                     files: [String], resultPath: String, verifyCmd: String? = nil,
-                    issue: String? = nil, fresh: Bool = false) {
+                    issue: String? = nil, fresh: Bool = false, preferences: String? = nil) {
+            self.preferences = preferences
             self.branch = branch
             self.base = base
             self.branchSha = branchSha
@@ -236,6 +246,10 @@ public enum SupervisedPrompt {
             merge will be re-tested. Run it yourself and get it green first.
 
             """
+        }
+
+        if let preferences = Preferences.section(ctx.preferences ?? "") {
+            out += "\(preferences)\n\n"
         }
 
         out += """

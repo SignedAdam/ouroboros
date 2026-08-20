@@ -644,6 +644,81 @@ enum Commands {
         print("  " + Ansi.dim("takes effect next time the app launches"))
     }
 
+    static func prefs(_ args: Args) {
+        let prefs = Preferences()
+        let verb = args.positional.first?.lowercased() ?? ""
+        let rest = Array(args.positional.dropFirst()).joined(separator: " ")
+
+        switch verb {
+        case "":
+            showPrefs(prefs)
+
+        case "path":
+            print(prefs.file)
+
+        case "edit":
+            guard editPrefs(prefs) else { Out.die("could not open \(prefs.file)") }
+            showPrefs(prefs)
+
+        case "clear", "reset":
+            guard prefs.clear() else { Out.die("could not write \(prefs.file)") }
+            Out.ok("preferences cleared — agents get nothing extra now")
+
+        case "set", "replace":
+            let text = rest.isEmpty ? readStdin() : rest
+            guard !text.isEmpty else { Out.die("usage: ouro prefs set \"write tests for every fix\"") }
+            guard prefs.write(text) else { Out.die("could not write \(prefs.file)") }
+            Out.ok("preferences replaced")
+            showPrefs(prefs)
+
+        case "add", "append":
+            let text = rest.isEmpty ? readStdin() : rest
+            guard !text.isEmpty else { Out.die("usage: ouro prefs add \"write tests for every fix\"") }
+            guard prefs.append(text) else { Out.die("could not write \(prefs.file)") }
+            Out.ok("added")
+            showPrefs(prefs)
+
+        default:
+            let text = args.joined
+            guard prefs.append(text) else { Out.die("could not write \(prefs.file)") }
+            Out.ok("added" + Ansi.dim("  (ouro prefs set \"…\" replaces the lot)"))
+            showPrefs(prefs)
+        }
+    }
+
+    private static func showPrefs(_ prefs: Preferences) {
+        let text = prefs.text()
+        print("")
+        if text.isEmpty {
+            print("  " + Ansi.dim("no preferences yet — every agent gets the plain brief"))
+            print("  " + Ansi.dim("add one: ouro prefs add \"write tests for every fix\""))
+            print("")
+            return
+        }
+        print("  " + Ansi.bold("every agent Ouroboros dispatches is told this"))
+        for line in text.components(separatedBy: "\n") { print("    " + line) }
+        print("")
+        print("  " + Ansi.dim(prefs.file) + Ansi.dim("   ouro prefs edit"))
+        print("")
+    }
+
+    private static func editPrefs(_ prefs: Preferences) -> Bool {
+        let editor = ProcessInfo.processInfo.environment["VISUAL"]
+            ?? ProcessInfo.processInfo.environment["EDITOR"] ?? "vi"
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: prefs.file) {
+            let parent = (prefs.file as NSString).deletingLastPathComponent
+            try? fm.createDirectory(atPath: parent, withIntermediateDirectories: true)
+            fm.createFile(atPath: prefs.file, contents: Data())
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "\(editor) \(Shell.quote(prefs.file))"]
+        do { try process.run() } catch { return false }
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+    }
+
     static func promote(_ args: Args) {
         guard let ideaId = args.positional.first else {
             Out.die("usage: ouro promote <idea-id> -p <project> [--fix]")

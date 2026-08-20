@@ -9,11 +9,19 @@ struct WizardRequest: Identifiable {
     let prefill: String?
 }
 
+struct PreferencesRequest: Identifiable {
+    let id = UUID()
+    let text: String
+    let path: String
+}
+
 @MainActor
 final class SlashRunner: ObservableObject {
     @Published var status: String?
 
     @Published var wizard: WizardRequest?
+
+    @Published var preferences: PreferencesRequest?
 
     @Published var working = false
 
@@ -73,6 +81,7 @@ final class SlashRunner: ObservableObject {
         case "toast":    model.dismissCapture?(); ToastCenter.shared.preview()
         case "hotkey":   await setHotkey(rest)
         case "logs":     openLogs(rest)
+        case "prefs":    await editPreferences(rest)
         case "health":   await showHealth()
         case "help":     showHelp()
         case "quit":     NSApplication.shared.terminate(nil)
@@ -480,6 +489,29 @@ final class SlashRunner: ObservableObject {
                : "could not write ~/.ouroboros/config.json")
     }
 
+    private func editPreferences(_ line: String) async {
+        let reply = await Wire.get("/v1/preferences", as: API.Preferences.self)
+        guard let current = reply.value else { report(reply.text); return }
+
+        guard !line.isEmpty else {
+            preferences = PreferencesRequest(text: current.text, path: current.path)
+            return
+        }
+        let saved = await Wire.put("/v1/preferences", API.SetPreferences(append: line),
+                                   as: API.Preferences.self)
+        guard let updated = saved.value else { report(saved.text); return }
+        report("noted — every agent from now on is told: \(SlashRunner.headline(updated.text))")
+    }
+
+    static func headline(_ text: String) -> String {
+        let lines = text.components(separatedBy: "\n").filter {
+            !$0.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        guard let last = lines.last else { return "nothing" }
+        let more = lines.count - 1
+        return more > 0 ? "\(last) (+\(more) more)" : last
+    }
+
     private func report(_ text: String) {
         status = text
         model.status = text
@@ -825,6 +857,94 @@ struct ProjectWizardSheet: View {
     }
 }
 
+struct PreferencesSheet: View {
+    let request: PreferencesRequest
+    @ObservedObject var model: AppModel
+    var onClose: () -> Void
+
+    @State private var text: String
+    @State private var working = false
+    @State private var problem: String?
+    @FocusState private var editing: Bool
+
+    init(request: PreferencesRequest, model: AppModel, onClose: @escaping () -> Void) {
+        self.request = request
+        self.onClose = onClose
+        _model = ObservedObject(wrappedValue: model)
+        _text = State(initialValue: request.text)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Preferences")
+                    .font(.system(size: 15, weight: .semibold, design: .rounded))
+                Text("every agent Ouroboros dispatches is told this, before it starts")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $text)
+                    .font(.system(size: 12, design: .monospaced))
+                    .scrollContentBackground(.hidden)
+                    .padding(6)
+                    .focused($editing)
+                if text.isEmpty {
+                    Text("write tests for every fix\nno comments unless the code can't say it")
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 14)
+                        .allowsHitTesting(false)
+                }
+            }
+            .frame(height: 190)
+            .background(Color.primary.opacity(0.05))
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .strokeBorder(ouroOrange.opacity(editing ? 0.4 : 0.18), lineWidth: 1))
+
+            Text(problem ?? tildeify(request.path))
+                .font(.system(size: 10))
+                .foregroundStyle(problem == nil
+                                 ? Color.secondary
+                                 : Color(red: 1.0, green: 0.37, blue: 0.34))
+                .lineLimit(2)
+
+            HStack(spacing: 8) {
+                Spacer()
+                Button("Cancel") { onClose() }
+                    .keyboardShortcut(.cancelAction)
+                Button(working ? "Saving…" : "Save") { Task { await save() } }
+                    .keyboardShortcut(.defaultAction)
+                    .buttonStyle(.borderedProminent)
+                    .tint(ouroOrange)
+                    .disabled(working)
+            }
+            .font(.system(size: 11))
+        }
+        .padding(18)
+        .frame(width: 460)
+        .background(.regularMaterial)
+        .onAppear { editing = true }
+    }
+
+    @MainActor
+    private func save() async {
+        problem = nil
+        working = true
+        defer { working = false }
+        let reply = await Wire.put("/v1/preferences", API.SetPreferences(text: text),
+                                   as: API.Preferences.self)
+        guard let saved = reply.value else { problem = reply.text; return }
+        model.status = saved.text.isEmpty
+            ? "preferences cleared — agents get the plain brief"
+            : "preferences saved — \(saved.text.components(separatedBy: "\n").count) lines every agent gets"
+        onClose()
+    }
+}
+
 private enum Wire {
     static let client = ZeroClient()
 
@@ -844,6 +964,11 @@ private enum Wire {
     static func patch<B: Encodable & Sendable, R: Decodable & Sendable>(
         _ path: String, _ body: B, as type: R.Type) async -> Reply<R> {
         await perform { try $0.patch(path, body, as: R.self) }
+    }
+
+    static func put<B: Encodable & Sendable, R: Decodable & Sendable>(
+        _ path: String, _ body: B, as type: R.Type) async -> Reply<R> {
+        await perform { try $0.put(path, body, as: R.self) }
     }
 
     static func delete<R: Decodable & Sendable>(_ path: String, as type: R.Type) async -> Reply<R> {

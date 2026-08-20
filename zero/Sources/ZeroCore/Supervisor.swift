@@ -12,6 +12,8 @@ public final class Supervisor: @unchecked Sendable {
     public let ouroPath: String
     public let home: String
 
+    public var preferences: Preferences { Preferences(home: home) }
+
     private let work = DispatchQueue(label: "zero.supervisor")
     private let worktrees = WorktreeManager()
 
@@ -181,9 +183,10 @@ public final class Supervisor: @unchecked Sendable {
             run.cwd = run.worktreePath ?? project.path
         }
 
+        let standing = preferences.text()
         let prompt: String
         if let existing = run.prompt, !existing.isEmpty {
-            prompt = existing
+            prompt = preferences.appended(to: existing)
         } else if run.kind == .fix, let issuePath = run.issuePath,
                   let issue = IssueService.store(for: project).read(path: issuePath) {
             prompt = SupervisedPrompt.fix(SupervisedPrompt.Context(
@@ -197,7 +200,8 @@ public final class Supervisor: @unchecked Sendable {
                 resultPath: runs.resultPath(run.id),
                 protectedPaths: project.policy.protectedPaths,
                 extraContext: run.note,
-                toolsPath: installedToolsPath()))
+                toolsPath: installedToolsPath(),
+                preferences: standing))
         } else {
             prompt = SupervisedPrompt.fix(SupervisedPrompt.Context(
                 title: run.title,
@@ -208,7 +212,8 @@ public final class Supervisor: @unchecked Sendable {
                 verifyCmd: project.verifyCmd,
                 resultPath: runs.resultPath(run.id),
                 protectedPaths: project.policy.protectedPaths,
-                toolsPath: installedToolsPath()))
+                toolsPath: installedToolsPath(),
+                preferences: standing))
         }
         try? FileManager.default.createDirectory(atPath: runs.dir(run.id),
                                                  withIntermediateDirectories: true)
@@ -729,7 +734,8 @@ public final class Supervisor: @unchecked Sendable {
             resultPath: resultPath,
             verifyCmd: project.verifyCmd,
             issue: issue,
-            fresh: fresh)
+            fresh: fresh,
+            preferences: preferences.text())
     }
 
     private func startOver(_ run: Run) {

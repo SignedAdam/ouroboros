@@ -72,6 +72,7 @@ GET  /v1/runs/{id}/log?lines=        the agent's terminal output
 GET  /v1/runs/{id}/diff              what the branch changed
 GET  /v1/runs/{id}/prompt            exactly what the agent was told
 GET  /v1/inbox                       what needs a human
+GET  /v1/preferences                 the standing orders every agent is told
 GET  /v1/ideas   · /v1/proposals
 GET  /v1/events                      SSE stream: run.*, issue.*, proposal.*
 ```
@@ -93,6 +94,7 @@ POST   /v1/projects               {path, name?, autonomy?, verifyCmd?}
 PATCH  /v1/projects/{id}          {name?, verifyCmd?, autonomy?, protectedPaths?, …}
 POST   /v1/projects/discover      {root}
 POST   /v1/projects/create        {name, dir?, description?, github?, roadmap?, agent?}
+PUT    /v1/preferences            {text} or {append}                   → the whole file back
 POST   /v1/setup                  {roots?}                             → adopt every repo found
 POST   /v1/update                 {}                                   → pull, rebuild, restart
 ```
@@ -102,6 +104,12 @@ registry, and registers an unknown repo on the spot.
 
 Renaming a project is `PATCH /v1/projects/{id}` with `{"name": "…"}` — the id and the
 directory don't move.
+
+`/v1/preferences` is the human's standing orders, in their words. Every agent Ouroboros
+dispatches is told them. Read them before you propose work, so what you propose fits how
+they want it done. Write there only when they ask you to remember something for good;
+`{"append": "…"}` adds a line, `{"text": "…"}` replaces the file, and `{"text": ""}`
+empties it.
 
 ## Scaffolding a project
 

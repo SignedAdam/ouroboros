@@ -83,6 +83,8 @@ public enum SlashCommands {
                      summary: "everything ouroboros has done"),
         SlashCommand(name: "hotkey", aliases: [], argHint: "<combo>",
                      summary: "the global capture shortcut"),
+        SlashCommand(name: "prefs", aliases: ["preferences"], argHint: "[line]",
+                     summary: "standing orders every agent is told"),
         SlashCommand(name: "health", aliases: ["daemon"], argHint: "",
                      summary: "daemon, projects, runs, inbox"),
         SlashCommand(name: "help", aliases: ["?", "commands"], argHint: "",
