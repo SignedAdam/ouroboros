@@ -12,6 +12,7 @@ struct Args {
         "p", "project", "t", "title", "a", "agent", "finish", "n", "lines", "status",
         "dir", "desc", "description", "github", "roadmap", "home", "source", "limit",
         "verify", "base", "autonomy", "name", "root", "prompt",
+        "l", "id", "span", "event", "q", "run", "level", "before",
     ]
 
     static func parse(_ argv: [String]) -> Args {

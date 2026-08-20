@@ -72,11 +72,13 @@ public enum SlashCommands {
 
         SlashCommand(name: "setup", aliases: [], argHint: "[roots]",
                      summary: "find and adopt your projects"),
-        SlashCommand(name: "update", aliases: ["upgrade"], argHint: "",
+        SlashCommand(name: "update", aliases: ["upgrade", "restart"], argHint: "",
                      summary: "pull and rebuild ouroboros itself"),
 
         SlashCommand(name: "rebuild", aliases: [], argHint: "from source",
                      summary: "rebuild from the code on disk and restart"),
+        SlashCommand(name: "logs", aliases: ["activity"], argHint: "[errors|text]",
+                     summary: "everything ouroboros has done"),
         SlashCommand(name: "hotkey", aliases: [], argHint: "<combo>",
                      summary: "the global capture shortcut"),
         SlashCommand(name: "health", aliases: ["daemon"], argHint: "",

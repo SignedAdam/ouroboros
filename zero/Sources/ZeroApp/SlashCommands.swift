@@ -71,12 +71,20 @@ final class SlashRunner: ObservableObject {
         case "update":   await selfUpdate()
         case "rebuild":  await rebuildFromSource()
         case "hotkey":   await setHotkey(rest)
+        case "logs":     openLogs(rest)
         case "health":   await showHealth()
         case "help":     showHelp()
         case "quit":     NSApplication.shared.terminate(nil)
 
         default:         report("\(command.name) isn't wired up yet")
         }
+    }
+
+    /// `/logs`, `/logs errors`, `/logs merge` — the argument seeds the filter so
+    /// you land on what you were looking for rather than the whole firehose.
+    private func openLogs(_ filter: String) {
+        LogBrowserController.shared.show(filter: filter)
+        report(filter.isEmpty ? "activity" : "activity · \(filter)")
     }
 
     private func addProject(_ rawPath: String) async {

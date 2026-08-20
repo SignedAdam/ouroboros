@@ -392,15 +392,26 @@ public final class Supervisor: @unchecked Sendable {
 
         if let verifyCmd = project.verifyCmd, !verifyCmd.isEmpty {
             let cwd = run.worktreePath ?? project.path
+            Log.shared.write("verify.started", "running `\(verifyCmd)` on \(run.branch ?? run.base)",
+                             project: project.name, run: id, path: cwd, branch: run.branch)
+            let began = Date()
             let outcome = Shell.runLine(verifyCmd, cwd: cwd, timeout: verifyTimeout)
             let verify = VerifyOutcome(command: verifyCmd, exitCode: outcome.status,
                                        output: String(outcome.output.suffix(4000)))
             runs.mutate(id) { $0.verify = verify }
+            let elapsed = Int(Date().timeIntervalSince(began) * 1000)
             if !verify.passed {
+                Log.shared.error("verify.failed", "`\(verifyCmd)` exited \(verify.exitCode), branch kept",
+                                 project: project.name, run: id,
+                                 detail: ["branch": run.branch ?? run.base,
+                                          "tail": Supervisor.lastWords(verify.output) ?? ""])
                 fail(id, note: "\(verifyCmd) failed (exit \(verify.exitCode)) — the branch is kept for inspection")
                 tick()
                 return
             }
+            Log.shared.write("verify.passed", "`\(verifyCmd)` clean in \(elapsed / 1000)s",
+                             project: project.name, run: id, branch: run.branch,
+                             durationMs: elapsed, exitCode: verify.exitCode)
         }
 
         guard let latest = runs.get(id) else { return }
@@ -424,12 +435,21 @@ public final class Supervisor: @unchecked Sendable {
             return
         }
         let git = Git(project.path)
+        Log.shared.write("merge.attempted", "merging \(branch) into \(run.base)",
+                         project: project.name, run: run.id, path: project.path, branch: branch)
 
         guard git.currentBranch == run.base else {
-            succeed(run.id, note: "Verified, but \(project.name) is on '\(git.currentBranch ?? "?")' not '\(run.base)' — merge \(branch) when you're ready.")
+            let on = git.currentBranch ?? "?"
+            Log.shared.warn("merge.refused", "held back: \(project.name) is on \(on), not \(run.base)",
+                            project: project.name, run: run.id,
+                            detail: ["branch": branch, "head": on, "base": run.base])
+            succeed(run.id, note: "Verified, but \(project.name) is on '\(on)' not '\(run.base)' — merge \(branch) when you're ready.")
             return
         }
         guard !git.hasUncommittedTrackedChanges() else {
+            Log.shared.warn("merge.refused", "held back: uncommitted changes to tracked files",
+                            project: project.name, run: run.id,
+                            detail: ["branch": branch, "base": run.base])
             succeed(run.id, note: "Verified, but you have uncommitted changes to tracked files — merge \(branch) when you're ready.")
             return
         }
@@ -438,10 +458,16 @@ public final class Supervisor: @unchecked Sendable {
         let merge = git.run(["merge", "--no-ff", branch, "-m", message])
         guard merge.ok else {
             git.run(["merge", "--abort"])
+            Log.shared.error("merge.failed", "\(branch) conflicted with \(run.base), branch kept",
+                             project: project.name, run: run.id,
+                             detail: ["branch": branch, "git": String(merge.output.suffix(600))])
             fail(run.id, note: "merge into \(run.base) conflicted — the branch \(branch) is intact:\n\(merge.output.suffix(600))")
             return
         }
         let sha = git.run(["rev-parse", "HEAD"], timeout: 10).trimmed
+        Log.shared.write("merge.succeeded", "merged \(branch) into \(run.base) as \(sha.prefix(8))",
+                         project: project.name, run: run.id, path: project.path, branch: branch,
+                         detail: ["commit": String(sha.prefix(12))])
 
         if let worktreePath = run.worktreePath {
             git.run(["worktree", "remove", worktreePath, "--force"], timeout: 60)
@@ -960,8 +986,51 @@ public final class Supervisor: @unchecked Sendable {
         return String(last.prefix(limit))
     }
 
+    /// Every run state change goes through here, so this is also where the run
+    /// half of the activity log is written. One choke point beats sprinkling
+    /// log calls through twenty methods and forgetting three of them.
     private func publish(_ type: String, _ run: Run) {
         events.publish(ZeroEvent(type: type, runId: run.id, projectId: run.projectId,
                                  status: run.status.rawValue, message: run.title))
+
+        let level: LogLevel
+        switch run.status {
+        case .failed:   level = .error
+        case .awaiting: level = .warn
+        default:        level = .info
+        }
+        var detail: [String: String] = ["title": run.title, "finish": run.finish.rawValue]
+        if let note = run.note { detail["note"] = String(note.prefix(400)) }
+        if let summary = run.result?.summary { detail["summary"] = String(summary.prefix(400)) }
+        if let verify = run.verify {
+            detail["verifyCmd"] = verify.command
+            detail["verifyExit"] = String(verify.exitCode)
+        }
+        if let merged = run.mergedInto { detail["mergedInto"] = merged }
+        if let sha = run.mergeCommit { detail["mergeCommit"] = String(sha.prefix(12)) }
+
+        Log.shared.write(
+            type, Supervisor.runHeadline(type, run), level: level,
+            project: run.projectName, run: run.id, issue: run.issuePath,
+            path: run.worktreePath ?? run.cwd, branch: run.branch, agent: run.agent,
+            session: run.sessionId,
+            durationMs: run.duration.map { Int($0 * 1000) },
+            exitCode: run.exitCode, detail: detail)
+    }
+
+    /// The one-liner you actually read in `ouro logs`. Past tense, concrete,
+    /// and it names the thing that changed rather than restating the status.
+    static func runHeadline(_ type: String, _ run: Run) -> String {
+        switch type {
+        case "run.queued":    return "queued \(run.agent) for “\(run.title)”"
+        case "run.started":   return "started \(run.agent) on \(run.branch ?? run.base)"
+        case "run.running":   return "\(run.agent) is live on \(run.branch ?? run.base)"
+        case "run.verifying": return "agent exited \(run.exitCode.map(String.init) ?? "?"), verifying \(run.branch ?? run.base)"
+        case "run.awaiting":  return "agent asked: \(run.result?.question ?? run.note ?? "needs a decision")"
+        case "run.succeeded": return run.mergedInto.map { "merged into \($0)" } ?? (run.note ?? "verified")
+        case "run.failed":    return run.note ?? "run failed"
+        case "run.abandoned": return "stopped \(run.branch ?? run.id)"
+        default:              return "\(type) \(run.title)"
+        }
     }
 }

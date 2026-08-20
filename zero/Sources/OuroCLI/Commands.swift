@@ -492,6 +492,110 @@ enum Commands {
         print("")
     }
 
+    // MARK: - logs
+
+    /// Reads the JSONL file directly rather than going through the daemon. The
+    /// moment you most want the log is the moment the daemon is wedged or dead,
+    /// and a log command that needs a healthy daemon is useless then.
+    static func logs(_ args: Args) {
+        // `log` is a run's terminal output and `logs` is the activity log, but
+        // nobody will remember which is plural. A run id here clearly means the
+        // former, so just do that instead of printing a usage error.
+        if let first = args.positional.first, first.hasPrefix("r-") {
+            log(args)
+            return
+        }
+        if args.positional.first == "around" {
+            guard let id = args.flag("id").flatMap(Int.init)
+                    ?? args.positional.dropFirst().first.flatMap(Int.init) else {
+                Out.die("usage: ouro logs around -id <log-id> [span]")
+            }
+            let span = args.flag("span").flatMap(Int.init)
+                ?? args.positional.dropFirst().compactMap(Int.init).last ?? 50
+            let lines = Log.shared.around(id: id, span: span)
+            guard !lines.isEmpty else { Out.die("no log line with id \(id)") }
+            renderLogs(lines, highlight: id, args: args)
+            return
+        }
+
+        var query = Log.Query()
+        query.limit = args.flag("l", "lines", "n").flatMap(Int.init) ?? 333
+        if args.bool("errors", "e") { query.minLevel = .error }
+        if args.bool("warn", "warnings") { query.minLevel = .warn }
+        if let level = args.flag("level") { query.minLevel = LogLevel(rawValue: level) }
+        query.project = args.flag("p", "project")
+        query.run = args.flag("run")
+        query.event = args.flag("event")
+        query.search = args.flag("q")
+
+        let lines = Log.shared.recent(query)
+        guard !lines.isEmpty else {
+            let exists = FileManager.default.fileExists(atPath: Log.shared.path)
+            print("  " + Ansi.dim(exists ? "nothing matches"
+                                  : "no log yet — it fills the moment ouroboros does something"))
+            return
+        }
+        renderLogs(lines, args: args)
+    }
+
+    /// Oldest first, so the newest line is the one left under your cursor.
+    private static func renderLogs(_ lines: [LogEvent], highlight: Int? = nil, args: Args) {
+        if args.bool("json") {
+            for event in lines.sorted(by: { $0.id < $1.id }) {
+                print(String(data: Zero.encode(event), encoding: .utf8) ?? "")
+            }
+            return
+        }
+        let time = DateFormatter(); time.dateFormat = "HH:mm:ss"
+        let day = DateFormatter();  day.dateFormat = "EEE d MMM"
+
+        var lastDay = ""
+        print("")
+        for event in lines.sorted(by: { $0.id < $1.id }) {
+            let stamp = day.string(from: event.ts)
+            if stamp != lastDay {
+                print("  " + Ansi.dim("── \(stamp) " + String(repeating: "─", count: 46)))
+                lastDay = stamp
+            }
+            let marker = highlight == event.id ? Ansi.orange("▸") : " "
+            let scope = [event.project, event.run.map { String($0.prefix(15)) }]
+                .compactMap { $0 }.joined(separator: "  ")
+            print("\(marker) \(Ansi.dim("#\(event.id)")) \(Ansi.dim(time.string(from: event.ts))) "
+                  + Ansi.pad(logGlyph(event.level) + " " + logTint(event.event, event.level), 32)
+                  + Ansi.pad(Ansi.dim(Fmt.truncate(scope, 28)), 30)
+                  + Fmt.truncate(event.message, 62))
+
+            if args.bool("v", "verbose"), let detail = event.detail, !detail.isEmpty {
+                for (key, value) in detail.sorted(by: { $0.key < $1.key }) where !value.isEmpty {
+                    print("      " + Ansi.dim("\(key): ") + Fmt.truncate(value, 94))
+                }
+            }
+        }
+        print("")
+        if highlight == nil, let newest = lines.map(\.id).max() {
+            print("  " + Ansi.dim("newest #\(newest)   ·   ouro logs around -id <id>   ·   ouro logs --errors"))
+            print("")
+        }
+    }
+
+    private static func logGlyph(_ level: LogLevel) -> String {
+        switch level {
+        case .debug: return Ansi.grey("·")
+        case .info:  return Ansi.green("·")
+        case .warn:  return Ansi.yellow("!")
+        case .error: return Ansi.red("✗")
+        }
+    }
+
+    private static func logTint(_ event: String, _ level: LogLevel) -> String {
+        switch level {
+        case .error: return Ansi.red(event)
+        case .warn:  return Ansi.yellow(event)
+        case .debug: return Ansi.grey(event)
+        case .info:  return Ansi.blue(event)
+        }
+    }
+
     static func hotkey(_ args: Args) {
         var config = Config.load()
         guard let combo = args.positional.first else {

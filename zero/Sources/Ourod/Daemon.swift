@@ -68,6 +68,11 @@ final class Daemon: @unchecked Sendable {
         timer.resume()
         self.timer = timer
 
+        Log.shared.write("daemon.started",
+                         "ouroboros \(ZeroVersion.current) up: \(registry.all().count) projects, \(runs.all().count) runs",
+                         path: Paths.socket,
+                         detail: ["pid": String(ProcessInfo.processInfo.processIdentifier),
+                                  "version": ZeroVersion.current])
         log("ouroboros zero \(ZeroVersion.current) listening on \(Paths.socket)")
         log("projects: \(registry.all().count)  runs: \(runs.all().count)")
     }
@@ -121,6 +126,7 @@ final class Daemon: @unchecked Sendable {
         case ("GET", "snapshot"):  return .json(snapshot())
         case ("GET", "events"):    return eventStream()
         case ("GET", "config"):    return .json(config)
+        case ("GET", "logs"):      return logs(request)
         case ("GET", "agents"):
             return .json(API.AgentList(agents: agentList(), defaultAgent: config.defaultAgent))
         case ("POST", "setup"):    return setup(request)
@@ -161,6 +167,10 @@ final class Daemon: @unchecked Sendable {
                 project.verifyCmd = verifyCmd
                 registry.upsert(project)
             }
+            Log.shared.write("project.registered", "adopted \(project.name)",
+                             project: project.name, path: project.path,
+                             detail: ["verify": project.verifyCmd ?? "none",
+                                      "autonomy": project.policy.autonomy.label])
             return .json(project, status: 201)
 
         case ("POST", 2) where path[1] == "discover":
@@ -345,6 +355,9 @@ final class Daemon: @unchecked Sendable {
                 return .error("could not write the issue file into \(project.path)")
             }
             events.publish(ZeroEvent(type: "issue.created", projectId: project.id, message: dto.title))
+            Log.shared.write("issue.created", "filed “\(dto.title)”",
+                             project: project.name, issue: dto.path, path: project.path,
+                             detail: ["id": dto.id, "dispatch": body.fix == true ? "yes" : "no"])
 
             var run: Run?
             if body.fix == true, let (_, issue) = issues.find(dto.id) {
@@ -589,6 +602,8 @@ final class Daemon: @unchecked Sendable {
                 title: idea.title, detail: String(idea.body.prefix(400)),
                 createdAt: idea.created))
             events.publish(ZeroEvent(type: "idea.created", message: idea.title))
+            Log.shared.write("idea.created", "parked “\(idea.title)”",
+                             project: projectId, path: idea.path)
             return .json(idea, status: 201)
 
         case ("POST", 3) where path[2] == "promote":
@@ -677,6 +692,41 @@ final class Daemon: @unchecked Sendable {
         default:
             return .error("no route", status: 404)
         }
+    }
+
+    /// `GET /v1/logs` — the same reader the CLI uses, so the log browser in the
+    /// app has no privileged path to the file.
+    ///
+    /// `?before=<id>` is the scroll-up pager: give me the page that precedes
+    /// this id. `?around=<id>&span=n` is the "what happened either side of
+    /// this" view.
+    private func logs(_ request: HTTPRequest) -> HTTPResponse {
+        if let around = request.q("around").flatMap(Int.init) {
+            let span = request.q("span").flatMap(Int.init) ?? 50
+            return .json(API.LogList(lines: Log.shared.around(id: around, span: span)))
+        }
+
+        var query = Log.Query()
+        query.limit = min(request.q("limit").flatMap(Int.init) ?? 333, 5000)
+        if let level = request.q("level") { query.minLevel = LogLevel(rawValue: level) }
+        if request.flag("errors") == true { query.minLevel = .error }
+        query.project = request.q("project")
+        query.run = request.q("run")
+        query.event = request.q("event")
+        query.search = request.q("q")
+
+        var lines = Log.shared.recent(query)
+        if let before = request.q("before").flatMap(Int.init) {
+            // `recent` is newest-first, so everything at or after the cursor is
+            // already on screen; drop it and keep the older tail.
+            lines = lines.filter { $0.id < before }
+            if lines.count < query.limit {
+                var deeper = query
+                deeper.limit = query.limit * 4
+                lines = Array(Log.shared.recent(deeper).filter { $0.id < before }.prefix(query.limit))
+            }
+        }
+        return .json(API.LogList(lines: lines))
     }
 
     private func setup(_ request: HTTPRequest) -> HTTPResponse {
