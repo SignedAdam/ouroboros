@@ -45,13 +45,21 @@ ouro i "the login button does nothing" --fix
 macOS only. See [`zero/README.md`](zero/README.md), and [`zero/OPERATOR.md`](zero/OPERATOR.md)
 for the API an AI operator drives it through.
 
-## Languages
+## Language support
 
-| Folder | Status |
-|---|---|
-| [`swift/`](swift/) | Ready — SPM package (pure engine + optional UI), full test suite; in production |
-| [`python/`](python/) | Port pending — a reference implementation exists |
-| [`go/`](go/) [`nextjs/`](nextjs/) [`react/`](react/) | Port pending — the skill covers porting |
+[`swift/`](swift/) and [`zero/`](zero/) are fully implemented and used in production.
+
+Reference ports for [`python/`](python/), [`go/`](go/), [`nextjs/`](nextjs/) and
+[`react/`](react/) are not written yet. Those folders are placeholders.
+
+You can still use Ouroboros in those stacks today. Point your coding agent at
+[`skills/ouroboros-integrate/SKILL.md`](skills/ouroboros-integrate/SKILL.md) and it will
+generate the pattern directly inside your target project.
+
+If you want a canonical port in this repo:
+
+- **Ask for one.** Open an issue with your stack. I will write the port for you.
+- **Contribute one.** PRs are welcome. Keep it minimal and match the Swift implementation.
 
 ## Repo layout
 
