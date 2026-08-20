@@ -39,9 +39,6 @@ final class PolicyDecodingTests: XCTestCase {
         XCTAssertTrue(try policy(#"{"gui":true}"#).gui)
     }
 
-    // A policy written before a field existed must still decode. Throwing here
-    // drops the whole project out of the registry, which reads as the user's
-    // config having been erased.
     func testAPolicyFromAnOlderBuildStillDecodes() throws {
         let old = #"{"autonomy":"auto","maxParallel":4,"worktreeDefault":false,"finishDefault":"pr","protectedPaths":["db/"]}"#
         let p = try policy(old)
