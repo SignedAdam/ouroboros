@@ -986,9 +986,6 @@ public final class Supervisor: @unchecked Sendable {
         return String(last.prefix(limit))
     }
 
-    /// Every run state change goes through here, so this is also where the run
-    /// half of the activity log is written. One choke point beats sprinkling
-    /// log calls through twenty methods and forgetting three of them.
     private func publish(_ type: String, _ run: Run) {
         events.publish(ZeroEvent(type: type, runId: run.id, projectId: run.projectId,
                                  status: run.status.rawValue, message: run.title))
@@ -1018,8 +1015,6 @@ public final class Supervisor: @unchecked Sendable {
             exitCode: run.exitCode, detail: detail)
     }
 
-    /// The one-liner you actually read in `ouro logs`. Past tense, concrete,
-    /// and it names the thing that changed rather than restating the status.
     static func runHeadline(_ type: String, _ run: Run) -> String {
         switch type {
         case "run.queued":    return "queued \(run.agent) for “\(run.title)”"

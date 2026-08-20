@@ -59,8 +59,6 @@ final class ToastCenter: NSObject {
             detail: run.note ?? run.result?.summary ?? run.projectName,
             good: landed)
 
-        // A pinned toast is being read. Later ones wait their turn instead of
-        // taking the panel out from under it.
         if state?.pinned == true, panel?.isVisible == true {
             waiting.append(content)
             waiting = Array(waiting.suffix(3))
@@ -128,9 +126,6 @@ final class ToastCenter: NSObject {
         }
     }
 
-    /// Answers whether the toast is still up. The pointer is polled rather than
-    /// tracked: the toast belongs to an app that is almost never the active one,
-    /// and SwiftUI's hover tracking stays asleep there.
     private func tick() -> Bool {
         guard let panel, let state else { return false }
         hover(grabbedAt != nil || panel.frame.contains(NSEvent.mouseLocation))
@@ -161,9 +156,6 @@ final class ToastCenter: NSObject {
         }
     }
 
-    /// Screen coordinates, not the gesture's own translation: the panel moves out
-    /// from under the pointer while the drag is live, which makes anything measured
-    /// inside the window walk away from the cursor.
     func grab() {
         guard let panel else { return }
         let mouse = NSEvent.mouseLocation
@@ -222,8 +214,6 @@ final class ToastCenter: NSObject {
     }
 }
 
-/// A toast never becomes the key window, so without this the click that presses
-/// pin or close is spent waking the panel up.
 final class ToastHostingView: NSHostingView<AnyView> {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

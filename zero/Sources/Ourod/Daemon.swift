@@ -694,12 +694,6 @@ final class Daemon: @unchecked Sendable {
         }
     }
 
-    /// `GET /v1/logs` — the same reader the CLI uses, so the log browser in the
-    /// app has no privileged path to the file.
-    ///
-    /// `?before=<id>` is the scroll-up pager: give me the page that precedes
-    /// this id. `?around=<id>&span=n` is the "what happened either side of
-    /// this" view.
     private func logs(_ request: HTTPRequest) -> HTTPResponse {
         if let around = request.q("around").flatMap(Int.init) {
             let span = request.q("span").flatMap(Int.init) ?? 50
@@ -717,8 +711,6 @@ final class Daemon: @unchecked Sendable {
 
         var lines = Log.shared.recent(query)
         if let before = request.q("before").flatMap(Int.init) {
-            // `recent` is newest-first, so everything at or after the cursor is
-            // already on screen; drop it and keep the older tail.
             lines = lines.filter { $0.id < before }
             if lines.count < query.limit {
                 var deeper = query

@@ -18,8 +18,6 @@ final class LogWritingTests: XCTestCase {
     }
 
     func testIDsResumeAcrossProcesses() {
-        // A restarted daemon must not begin numbering at 1 again, or `around`
-        // lands on whichever of the duplicates it finds first.
         let path = tempLogPath("resume")
         let first = Log(path: path)
         for i in 1...3 { first.write("run.queued", "\(i)") }
@@ -79,8 +77,6 @@ final class LogWritingTests: XCTestCase {
     }
 
     func testTheSharedLogIsMutedUnderTest() {
-        // Caught for real: the suite exercised the supervisor and wrote
-        // "merged fix/thing into main" into the user's live activity log.
         XCTAssertTrue(Log.underTest)
         XCTAssertFalse(Log.shared.enabled,
                        "tests must never write to ~/.ouroboros/log.jsonl")
@@ -185,7 +181,6 @@ final class LogTailReaderTests: XCTestCase {
     }
 
     func testTailLinesSpansChunkBoundaries() throws {
-        // 64KB is the read chunk; a line that straddles it must not be split.
         let path = tempLogPath("chunky")
         let padded = (1...4000).map { "line \($0) " + String(repeating: "x", count: 40) }
         try (padded.joined(separator: "\n") + "\n").write(toFile: path, atomically: true, encoding: .utf8)

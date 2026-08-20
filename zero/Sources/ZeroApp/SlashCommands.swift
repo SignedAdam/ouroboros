@@ -80,8 +80,6 @@ final class SlashRunner: ObservableObject {
         }
     }
 
-    /// `/logs`, `/logs errors`, `/logs merge` — the argument seeds the filter so
-    /// you land on what you were looking for rather than the whole firehose.
     private func openLogs(_ filter: String) {
         LogBrowserController.shared.show(filter: filter)
         report(filter.isEmpty ? "activity" : "activity · \(filter)")

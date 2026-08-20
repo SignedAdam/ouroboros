@@ -492,15 +492,7 @@ enum Commands {
         print("")
     }
 
-    // MARK: - logs
-
-    /// Reads the JSONL file directly rather than going through the daemon. The
-    /// moment you most want the log is the moment the daemon is wedged or dead,
-    /// and a log command that needs a healthy daemon is useless then.
     static func logs(_ args: Args) {
-        // `log` is a run's terminal output and `logs` is the activity log, but
-        // nobody will remember which is plural. A run id here clearly means the
-        // former, so just do that instead of printing a usage error.
         if let first = args.positional.first, first.hasPrefix("r-") {
             log(args)
             return
@@ -538,7 +530,6 @@ enum Commands {
         renderLogs(lines, args: args)
     }
 
-    /// Oldest first, so the newest line is the one left under your cursor.
     private static func renderLogs(_ lines: [LogEvent], highlight: Int? = nil, args: Args) {
         if args.bool("json") {
             for event in lines.sorted(by: { $0.id < $1.id }) {

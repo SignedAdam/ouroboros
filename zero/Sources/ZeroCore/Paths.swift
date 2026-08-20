@@ -22,7 +22,7 @@ public enum Paths {
     public static var ideasDir: String { sub("ideas") }
     public static var proposalsDir: String { sub("proposals") }
     public static var daemonLog: String { sub("ourod.log") }
-    /// The structured activity log, one JSON object per line.
+
     public static var logFile: String { sub("log.jsonl") }
     public static var logFilePrevious: String { sub("log.1.jsonl") }
     public static var pidFile: String { sub("ourod.pid") }

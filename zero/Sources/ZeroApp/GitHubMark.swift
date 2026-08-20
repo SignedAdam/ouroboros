@@ -21,8 +21,6 @@ struct GitHubMark: Shape {
         return path
     }
 
-    /// The GitHub mark (octicon `mark-github-16`, MIT) on a 16×16 grid: one closed
-    /// outline, six numbers per cubic — two controls and the end point.
     private static let silhouette: [CGFloat] = [
         3.58, 0,        0, 3.58,        0, 8,
         0, 11.54,       2.29, 14.53,    5.47, 15.59,

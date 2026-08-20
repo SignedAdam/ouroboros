@@ -16,10 +16,6 @@ public enum ToastPlacement {
                        y: min(max(origin.y, lowY), max(lowY, frame.maxY - size.height - margin)))
     }
 
-    /// Where the next toast goes. `screens` is every visible frame, the preferred
-    /// one first. A remembered origin is kept on whichever screen it touches, so a
-    /// toast dragged to a display that is now unplugged comes home instead of
-    /// opening where nobody can see it.
     public static func origin(remembered: CGPoint?, size: CGSize, screens: [CGRect]) -> CGPoint? {
         guard let preferred = screens.first else { return nil }
         guard let remembered else { return resting(size: size, in: preferred) }

@@ -1,19 +1,10 @@
 import Foundation
 
-/// What Ouroboros did, one JSON object per line.
-///
-/// The rule that keeps this useful: **one event, one line, one sentence.** If a
-/// line needs a paragraph to explain it, the paragraph belongs in `detail`, not
-/// in `message`. You should be able to read 333 of these and know what the
-/// machine has been doing without expanding a single one.
 public struct LogEvent: Codable, Sendable, Identifiable, Equatable {
-    /// Monotonic and human-typable, so `ouro logs around -id 412` is a real
-    /// thing you can do from what you just read on screen.
     public var id: Int
     public var ts: Date
     public var level: LogLevel
-    /// Dotted kind: `run.queued`, `merge.failed`, `verify.passed`. Stable
-    /// enough to grep and to filter on.
+
     public var event: String
     public var message: String
 
@@ -23,13 +14,11 @@ public struct LogEvent: Codable, Sendable, Identifiable, Equatable {
     public var path: String?
     public var branch: String?
     public var agent: String?
-    /// The agent's own session/transcript id when the harness reports one, so a
-    /// line here can be traced back to the actual conversation.
+
     public var session: String?
     public var durationMs: Int?
     public var exitCode: Int32?
-    /// Anything else worth keeping, flattened to strings so the shape never
-    /// breaks a reader.
+
     public var detail: [String: String]?
 
     public init(id: Int = 0, ts: Date = Date(), level: LogLevel = .info, event: String,
@@ -70,41 +59,27 @@ public enum LogLevel: String, Codable, Sendable, CaseIterable, Comparable {
     public static func < (a: LogLevel, b: LogLevel) -> Bool { a.rank < b.rank }
 }
 
-/// Append-only JSONL at `~/.ouroboros/log.jsonl`, with one rotation.
-///
-/// Deliberately not a database and deliberately not the daemon's stderr: the
-/// log has to survive a daemon restart, be readable while the daemon is down,
-/// and be greppable with the tools you already have. A file does all three.
 public final class Log: @unchecked Sendable {
     public static let shared = Log()
 
     private let lock = NSLock()
     private var nextID: Int = 1
     private var loaded = false
-    /// Rotate at 8MB. Big enough that a week of ordinary use never trips it,
-    /// small enough that reading the whole file stays cheap when it does.
+
     private let rotateBytes = 8 * 1024 * 1024
 
     private let overridePath: String?
     public var path: String { overridePath ?? Paths.logFile }
     public var previousPath: String { overridePath.map { $0 + ".1" } ?? Paths.logFilePrevious }
-    /// Off for anything that must not touch the user's home.
+
     public var enabled = true
 
-    /// `shared` writes to `~/.ouroboros/log.jsonl`. An explicit path makes the
-    /// whole thing testable without a singleton fighting the test runner.
     public init(path: String? = nil) {
         self.overridePath = path
-        // A test suite exercising the supervisor would otherwise scribble
-        // "merged fix/thing into main" into the real activity log, which is both
-        // wrong and confusing to read back six hours later. Explicit-path
-        // instances still write, so the log's own tests keep working.
+
         if path == nil, Log.underTest { enabled = false }
     }
 
-    /// The env vars Xcode sets are absent under `swift test`, so ask the
-    /// runtime whether a test framework is loaded instead. That holds for both
-    /// harnesses and cannot be true in the shipped binaries.
     public static var underTest: Bool {
         if NSClassFromString("XCTestCase") != nil { return true }
         let env = ProcessInfo.processInfo.environment
@@ -112,8 +87,6 @@ public final class Log: @unchecked Sendable {
             || env["XCTestBundlePath"] != nil
             || env["OUROBOROS_TESTING"] != nil
     }
-
-    // MARK: - writing
 
     public func emit(_ event: LogEvent) {
         guard enabled else { return }
@@ -128,8 +101,6 @@ public final class Log: @unchecked Sendable {
         lock.unlock()
     }
 
-    /// The call site every other file uses. Keyword-heavy on purpose: a log
-    /// line with no project and no run is nearly useless six hours later.
     public func write(_ event: String, _ message: String, level: LogLevel = .info,
                       project: String? = nil, run: String? = nil, issue: String? = nil,
                       path: String? = nil, branch: String? = nil, agent: String? = nil,
@@ -178,21 +149,17 @@ public final class Log: @unchecked Sendable {
         try? fm.moveItem(atPath: path, toPath: previousPath)
     }
 
-    // MARK: - reading
-
     public struct Query: Sendable {
         public var limit: Int = 333
         public var minLevel: LogLevel?
         public var project: String?
         public var run: String?
-        /// Substring match against `event`, so `merge` catches `merge.failed`.
+
         public var event: String?
         public var search: String?
         public init() {}
     }
 
-    /// Most recent first. Reads backwards, so a 300-line tail of an 8MB file
-    /// touches a few kilobytes.
     public func recent(_ query: Query = Query()) -> [LogEvent] {
         var out: [LogEvent] = []
         for file in [path, previousPath] {
@@ -206,8 +173,6 @@ public final class Log: @unchecked Sendable {
         return out
     }
 
-    /// `span` lines centred on `id`: half before, half after, oldest first —
-    /// the order you want when you are reading around something that broke.
     public func around(id: Int, span: Int = 50) -> [LogEvent] {
         let half = max(1, span / 2)
         var all: [LogEvent] = []
@@ -241,8 +206,6 @@ public final class Log: @unchecked Sendable {
         return true
     }
 
-    // MARK: - file helpers
-
     static let encoder: JSONEncoder = {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
@@ -256,9 +219,6 @@ public final class Log: @unchecked Sendable {
     }
 
     func lastID() -> Int {
-        // Nothing readable at the tail of the current file falls through to the
-        // rotated one, so ids keep climbing across a rotation instead of
-        // restarting at 1 and colliding with everything already written.
         for file in [path, previousPath] {
             for line in Log.tailLines(path: file, maxLines: 5).reversed() {
                 if let event = Log.decode(line) { return event.id }
@@ -267,8 +227,6 @@ public final class Log: @unchecked Sendable {
         return 0
     }
 
-    /// Last `maxLines` lines of a file, oldest first, read from the end in
-    /// chunks so tailing does not cost the size of the file.
     static func tailLines(path: String, maxLines: Int) -> [String] {
         guard let handle = FileHandle(forReadingAtPath: path) else { return [] }
         defer { try? handle.close() }
@@ -286,7 +244,6 @@ public final class Log: @unchecked Sendable {
             guard let chunk = try? handle.read(upToCount: readSize) else { break }
             buffer = chunk + buffer
 
-            // Keep the first (partial) line in the buffer until we read further back.
             var parts = buffer.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: false)
             let head = parts.removeFirst()
             lines = parts.compactMap { String(data: Data($0), encoding: .utf8) } + lines

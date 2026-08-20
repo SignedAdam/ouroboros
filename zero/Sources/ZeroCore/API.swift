@@ -276,7 +276,7 @@ public enum API {
 
     public struct LogList: Codable, Sendable {
         public var lines: [LogEvent]
-        /// The oldest id in this page, so a scroll-up can ask for what precedes it.
+
         public var oldestID: Int?
         public var newestID: Int?
         public init(lines: [LogEvent]) {

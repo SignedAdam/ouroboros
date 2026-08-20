@@ -2,12 +2,6 @@ import SwiftUI
 import AppKit
 import ZeroCore
 
-/// The log browser: a tail you can read, not a table you have to query.
-///
-/// Ordering is the whole design. Lines run oldest at the top to newest at the
-/// bottom and the window opens pinned to the bottom, so scrolling **up** walks
-/// backwards in time and older pages load as you go. That is how a terminal
-/// behaves and how anyone reading a log already expects to move.
 @MainActor
 final class LogBrowserController: NSObject, NSWindowDelegate {
     static let shared = LogBrowserController()
@@ -46,8 +40,6 @@ final class LogBrowserController: NSObject, NSWindowDelegate {
     }
 }
 
-// MARK: - model
-
 enum LogLevelFilter: String, CaseIterable, Identifiable {
     case everything, warnings, errorsOnly
     var id: String { rawValue }
@@ -71,7 +63,6 @@ enum LogLevelFilter: String, CaseIterable, Identifiable {
 
 @MainActor
 final class LogBrowserModel: ObservableObject {
-    /// Oldest first. The view renders in this order and sits at the bottom.
     @Published var lines: [LogEvent] = []
     @Published var expanded: Set<Int> = []
     @Published var level: LogLevelFilter = .everything
@@ -139,10 +130,6 @@ final class LogBrowserModel: ObservableObject {
     }
 }
 
-// MARK: - geometry
-
-/// One definition of the column widths, used by the header, the rows and the
-/// rules. They drift apart the moment there are two.
 private enum Col {
     static let gutter: CGFloat = 46
     static let time: CGFloat = 70
@@ -151,8 +138,6 @@ private enum Col {
     static let project: CGFloat = 104
     static let rule: CGFloat = 1
 
-    /// Where the message column begins — the expanded panel lines up with it
-    /// rather than floating at an arbitrary indent.
     static var messageInset: CGFloat {
         gutter + time + level + event + project + rule * 5
     }
@@ -165,8 +150,6 @@ private struct VRule: View {
             .frame(width: Col.rule)
     }
 }
-
-// MARK: - view
 
 struct LogBrowserView: View {
     @ObservedObject var model: LogBrowserModel
@@ -281,9 +264,7 @@ struct LogBrowserView: View {
                 }
             }
             .onChange(of: model.lines.count) { _, _ in
-                // Newest at the bottom: land there on first load, and after an
-                // older page is prepended keep the line the reader was looking
-                // at exactly where it was.
+
                 if let anchor {
                     proxy.scrollTo(anchor, anchor: .top)
                     self.anchor = nil
@@ -294,8 +275,6 @@ struct LogBrowserView: View {
         }
     }
 
-    /// Sits above the first row; when it scrolls into view there is older
-    /// history to fetch.
     private var topSentinel: some View {
         Group {
             if model.exhausted {
@@ -350,8 +329,6 @@ struct LogBrowserView: View {
     }
 }
 
-// MARK: - row
-
 private struct LogRow: View {
     let event: LogEvent
     let zebra: Bool
@@ -361,8 +338,6 @@ private struct LogRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // The one-liner. Its shape never changes when expanded — the detail
-            // opens underneath, so the line you clicked stays exactly where it was.
             HStack(spacing: 0) {
                 Text("\(event.id)")
                     .font(.system(size: 10, design: .monospaced))
@@ -428,8 +403,6 @@ private struct LogRow: View {
     }()
 }
 
-/// The unfolded JSON. Known fields get their own row and their own treatment;
-/// anything left over is shown verbatim so nothing is ever silently hidden.
 private struct LogDetail: View {
     let event: LogEvent
 
@@ -512,8 +485,6 @@ private struct LogDetail: View {
         ms < 1000 ? "\(ms) ms" : String(format: "%.1f s", Double(ms) / 1000)
     }
 
-    /// Home-relative paths, because `/Users/sauel/` at the front of every line
-    /// is noise you already know.
     static func shorten(_ path: String) -> String {
         let home = NSHomeDirectory()
         return path.hasPrefix(home) ? "~" + path.dropFirst(home.count) : path
