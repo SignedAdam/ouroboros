@@ -66,3 +66,11 @@ for the API an AI operator drives it through.
 Composer → `.issues/new/<Title>.md` (frontmatter `title`/`created`; status = folder) →
 seed prompt → agent in a `fix/<slug>` worktree in its own window → the agent appends a
 `## Resolution` section and moves the file to `.issues/done/` when the fix lands.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Use it in anything, commercial work included.
+
+If Ouroboros ends up in something you ship, a link back is appreciated and never
+required. The mark is yours to display too, if you want to show what's under the
+floating button.
